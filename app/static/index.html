@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Askive</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="logo-mark" width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="logoGradient" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#8b7bff" />
+              <stop offset="100%" stop-color="#4f7fff" />
+            </linearGradient>
+          </defs>
+          <rect width="40" height="40" rx="12" fill="url(#logoGradient)" />
+          <path
+            d="M11 14.5C11 12.567 12.567 11 14.5 11H25.5C27.433 11 29 12.567 29 14.5V21.5C29 23.433 27.433 25 25.5 25H18.8L14.2 28.6C13.8 28.9 13.25 28.6 13.25 28.1V25H14.5C12.567 25 11 23.433 11 21.5V14.5Z"
+            fill="white"
+            fill-opacity="0.95"
+          />
+          <circle cx="16.5" cy="18" r="1.4" fill="url(#logoGradient)" />
+          <circle cx="20" cy="18" r="1.4" fill="url(#logoGradient)" />
+          <circle cx="23.5" cy="18" r="1.4" fill="url(#logoGradient)" />
+        </svg>
+        <span class="wordmark">Askive</span>
+      </div>
+      <div class="topbar-actions">
+        <div class="history-dropdown">
+          <button id="history-btn" class="ghost-btn" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 8V12L15 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            History
+          </button>
+          <div id="history-panel" class="history-panel"></div>
+        </div>
+        <button id="new-chat-btn" class="ghost-btn" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+          New chat
+        </button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <main class="chat-section">
+        <div id="messages" class="messages">
+          <div class="empty-state">
+            <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M11 14.5C11 12.567 12.567 11 14.5 11H25.5C27.433 11 29 12.567 29 14.5V21.5C29 23.433 27.433 25 25.5 25H18.8L14.2 28.6C13.8 28.9 13.25 28.6 13.25 28.1V25H14.5C12.567 25 11 23.433 11 21.5V14.5Z"
+                fill="currentColor"
+              />
+            </svg>
+            <p>Upload a document on the right, then ask anything about it.</p>
+          </div>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <textarea
+            id="question-input"
+            placeholder="Ask a question about your document&hellip;"
+            rows="1"
+          ></textarea>
+          <button id="send-btn" type="submit" aria-label="Send">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 12L20 4L13 20L11 13L4 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" fill="currentColor" fill-opacity="0.15"/>
+            </svg>
+          </button>
+        </form>
+      </main>
+
+      <aside class="doc-panel">
+        <div class="doc-panel-header">
+          <label class="file-input-label" for="file-input">
+            <svg class="upload-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4 16V18C4 19.1046 4.89543 20 6 20H18C19.1046 20 20 19.1046 20 18V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span id="file-name">Add a PDF, Word, or text file&hellip;</span>
+            <input type="file" id="file-input" accept=".pdf,.txt,.docx" />
+          </label>
+          <button id="upload-btn" type="button">Upload</button>
+        </div>
+        <p id="upload-status" class="upload-status"></p>
+
+        <div id="doc-list" class="doc-list"></div>
+
+        <div id="doc-preview" class="doc-preview">
+          <div class="doc-preview-empty">Select a document to preview it here.</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

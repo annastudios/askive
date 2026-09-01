@@ -1,0 +1,50 @@
+from fastapi import APIRouter, HTTPException
+# Private import: google-genai's public `google.genai.errors` classes don't
+# cover the Interactions API - it raises this internal exception type instead.
+from google.genai._gaos.lib.compat_errors import APIStatusError
+
+from app.config import gemini_client, GEMINI_MODEL
+from app.models.schemas import ChatRequest, ChatResponse
+from app.services import memory
+from app.services.embeddings import embed_text
+from app.services.retrieval import search
+
+router = APIRouter()
+
+
+@router.post("/", response_model=ChatResponse)
+def ask_question(request: ChatRequest):
+    history = memory.get_history(request.session_id)
+    search_query = memory.build_search_query(request.session_id, request.question)
+
+    query_embedding = embed_text(search_query, input_type="query")
+    chunks = search(query_embedding, document_ids=request.document_ids or None)
+
+    context = "\n\n".join(chunks)
+    transcript = "\n".join(f"Q: {t['question']}\nA: {t['answer']}" for t in history[-3:])
+    history_block = f"Recent conversation:\n{transcript}\n\n" if transcript else ""
+
+    prompt = (
+        "Answer the question using only the context below. If the context "
+        "doesn't contain the answer, say you don't know. Use the recent "
+        "conversation, if any, to understand what the question refers to.\n\n"
+        f"{history_block}"
+        f"Context:\n{context}\n\n"
+        f"Question: {request.question}"
+    )
+
+    try:
+        interaction = gemini_client.interactions.create(model=GEMINI_MODEL, input=prompt)
+    except APIStatusError as e:
+        if e.status_code == 429:
+            raise HTTPException(
+                status_code=503,
+                detail="Gemini's free-tier quota is exhausted for now. Wait a bit and try again.",
+            ) from e
+        raise
+
+    answer = interaction.output_text.strip()
+
+    memory.add_turn(request.session_id, request.question, answer)
+
+    return ChatResponse(answer=answer, sources=chunks)
