@@ -4,6 +4,9 @@ Chat with your documents. A RAG app with semantic chunking and
 conversation memory, built with FastAPI, ChromaDB, Voyage AI, and
 Gemini.
 
+<img width="1915" height="892" alt="image" src="https://github.com/user-attachments/assets/57d33ef4-6b72-4ea7-aae0-db11f662ccc5" />
+
+
 ## Setup
 
 ```bash
