@@ -3,4 +3,5 @@ data/chroma_db/
 .env
 __pycache__/
 *.pyc
+.pytest_cache/
 .claude/
