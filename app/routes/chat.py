@@ -18,7 +18,7 @@ def ask_question(request: ChatRequest):
     search_query = memory.build_search_query(request.session_id, request.question)
 
     query_embedding = embed_text(search_query, input_type="query")
-    chunks = search(query_embedding, document_ids=request.document_ids or None)
+    chunks = search(search_query, query_embedding, document_ids=request.document_ids or None)
 
     context = "\n\n".join(chunks)
     transcript = "\n".join(f"Q: {t['question']}\nA: {t['answer']}" for t in history[-3:])
