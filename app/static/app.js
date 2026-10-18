@@ -1,4 +1,4 @@
-const HISTORY_KEY = "askive_chat_history";
+const TOKEN_KEY = "askive_token";
 
 let sessionId = crypto.randomUUID();
 let currentMessages = []; // {role, text, sources, timestamp}
@@ -18,9 +18,24 @@ const chatForm = document.getElementById("chat-form");
 const questionInput = document.getElementById("question-input");
 const sendBtn = document.getElementById("send-btn");
 
-const documents = [];
+const authScreenEl = document.getElementById("auth-screen");
+const authForm = document.getElementById("auth-form");
+const authTitle = document.getElementById("auth-title");
+const authUsername = document.getElementById("auth-username");
+const authPassword = document.getElementById("auth-password");
+const authError = document.getElementById("auth-error");
+const authSubmit = document.getElementById("auth-submit");
+const authSwitchText = document.getElementById("auth-switch-text");
+const authSwitchBtn = document.getElementById("auth-switch-btn");
+const appShellEl = document.getElementById("app-shell");
+const userChipEl = document.getElementById("user-chip");
+const signOutBtn = document.getElementById("sign-out-btn");
+
+let documents = [];
 let selectedDocId = null;
 let previewObjectUrl = null;
+let currentUser = null;
+let authMode = "login"; // or "register"
 
 const EMPTY_STATE_HTML = `
   <div class="empty-state">
@@ -33,6 +48,165 @@ const EMPTY_STATE_HTML = `
     <p>Upload a document on the right, then ask anything about it.</p>
   </div>
 `;
+
+// --- Auth ---
+
+function getToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // localStorage unavailable - you'll just need to sign in again after a reload.
+  }
+}
+
+class SignedOutError extends Error {}
+
+// fetch() with the login token attached. A 401 means the token is missing
+// or expired, so drop back to the sign-in screen.
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401) {
+    signOut("Your session expired — please sign in again.");
+    throw new SignedOutError();
+  }
+  return res;
+}
+
+async function errorMessage(res) {
+  try {
+    const body = await res.json();
+    if (typeof body.detail === "string") return body.detail;
+    if (Array.isArray(body.detail)) {
+      return body.detail.map((d) => `${d.loc[d.loc.length - 1]}: ${d.msg}`).join("; ");
+    }
+  } catch {
+    // not JSON
+  }
+  return `${res.status} ${res.statusText}`;
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isLogin = mode === "login";
+  authTitle.textContent = isLogin ? "Sign in" : "Create an account";
+  authSubmit.textContent = isLogin ? "Sign in" : "Create account";
+  authSwitchText.textContent = isLogin ? "New here?" : "Already have an account?";
+  authSwitchBtn.textContent = isLogin ? "Create an account" : "Sign in";
+  authPassword.autocomplete = isLogin ? "current-password" : "new-password";
+  authError.textContent = "";
+}
+
+authSwitchBtn.addEventListener("click", () => {
+  setAuthMode(authMode === "login" ? "register" : "login");
+});
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = authUsername.value.trim();
+  const password = authPassword.value;
+  authError.textContent = "";
+  authSubmit.disabled = true;
+
+  try {
+    if (authMode === "register") {
+      const res = await fetch("/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) throw new Error(await errorMessage(res));
+    }
+
+    const res = await fetch("/auth/login", {
+      method: "POST",
+      body: new URLSearchParams({ username, password }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res));
+    const { access_token } = await res.json();
+    setToken(access_token);
+    authPassword.value = "";
+    await enterApp();
+  } catch (err) {
+    authError.textContent = err.message;
+  } finally {
+    authSubmit.disabled = false;
+  }
+});
+
+signOutBtn.addEventListener("click", () => signOut());
+
+function showAuthScreen(message = "") {
+  appShellEl.hidden = true;
+  authScreenEl.hidden = false;
+  authError.textContent = message;
+  authUsername.focus();
+}
+
+function signOut(message = "") {
+  if (currentUser) persistCurrentSession();
+  setToken(null);
+  currentUser = null;
+  documents = [];
+  selectedDocId = null;
+  sessionId = crypto.randomUUID();
+  currentMessages = [];
+  messagesEl.innerHTML = EMPTY_STATE_HTML;
+  docListEl.innerHTML = "";
+  docPreviewEl.innerHTML = '<div class="doc-preview-empty">Select a document to preview it here.</div>';
+  setUploadStatus("", false);
+  setAuthMode("login");
+  showAuthScreen(message);
+}
+
+async function enterApp() {
+  const res = await apiFetch("/auth/me");
+  if (!res.ok) throw new Error(await errorMessage(res));
+  currentUser = await res.json();
+  userChipEl.textContent = currentUser.username;
+
+  authScreenEl.hidden = true;
+  appShellEl.hidden = false;
+  await loadDocuments();
+  questionInput.focus();
+}
+
+async function loadDocuments() {
+  const res = await apiFetch("/documents/");
+  if (!res.ok) return;
+  documents = (await res.json()).map((d) => ({
+    id: d.id,
+    name: d.filename,
+    file: null, // the original file isn't kept server-side, so no preview after a reload
+    chunks: d.chunks,
+  }));
+  renderDocList();
+}
+
+async function boot() {
+  if (!getToken()) {
+    showAuthScreen();
+    return;
+  }
+  try {
+    await enterApp();
+  } catch (err) {
+    if (!(err instanceof SignedOutError)) signOut(`Couldn't load your account: ${err.message}`);
+  }
+}
+
+// --- Upload & chat ---
 
 fileInput.addEventListener("change", () => {
   fileNameLabel.textContent = fileInput.files[0]?.name || "Add a PDF, Word, or text file…";
@@ -66,8 +240,8 @@ uploadBtn.addEventListener("click", async () => {
   setUploadStatus("Uploading and chunking…", false);
 
   try {
-    const res = await fetch("/upload/", { method: "POST", body: formData });
-    if (!res.ok) throw new Error(await res.text());
+    const res = await apiFetch("/upload/", { method: "POST", body: formData });
+    if (!res.ok) throw new Error(await errorMessage(res));
     const data = await res.json();
 
     documents.push({
@@ -83,6 +257,7 @@ uploadBtn.addEventListener("click", async () => {
     fileInput.value = "";
     fileNameLabel.textContent = "Add a PDF, Word, or text file…";
   } catch (err) {
+    if (err instanceof SignedOutError) return;
     setUploadStatus(`Upload failed: ${err.message}`, true);
   } finally {
     uploadBtn.disabled = false;
@@ -119,7 +294,7 @@ chatForm.addEventListener("submit", async (e) => {
   const loadingEl = addTypingIndicator();
 
   try {
-    const res = await fetch("/chat/", {
+    const res = await apiFetch("/chat/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -128,13 +303,14 @@ chatForm.addEventListener("submit", async (e) => {
         document_ids: documents.map((d) => d.id),
       }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await errorMessage(res));
     const data = await res.json();
     loadingEl.remove();
     addMessage("assistant", data.answer, data.sources);
     persistCurrentSession();
   } catch (err) {
     loadingEl.remove();
+    if (err instanceof SignedOutError) return;
     addMessage("error", `Something went wrong: ${err.message}`, null, { record: false });
   } finally {
     sendBtn.disabled = false;
@@ -151,11 +327,15 @@ function removeEmptyState() {
   messagesEl.querySelector(".empty-state")?.remove();
 }
 
-// --- Chat history (browser-local) ---
+// --- Chat history (browser-local, separate per user) ---
+
+function historyKey() {
+  return `askive_chat_history:${currentUser?.id}`;
+}
 
 function loadHistory() {
   try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+    return JSON.parse(localStorage.getItem(historyKey())) || [];
   } catch {
     return [];
   }
@@ -163,7 +343,7 @@ function loadHistory() {
 
 function saveHistory(history) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 30)));
+    localStorage.setItem(historyKey(), JSON.stringify(history.slice(0, 30)));
   } catch {
     // localStorage unavailable (private mode, quota, etc.) - history just won't persist.
   }
@@ -305,6 +485,14 @@ async function selectDocument(id) {
 
   docPreviewEl.innerHTML = "";
 
+  if (!doc.file) {
+    const empty = document.createElement("div");
+    empty.className = "doc-preview-empty";
+    empty.textContent = "Preview is only available right after uploading, but you can still chat with this document.";
+    docPreviewEl.appendChild(empty);
+    return;
+  }
+
   const name = doc.name.toLowerCase();
   const isPdf = doc.file.type === "application/pdf" || name.endsWith(".pdf");
   const isDocx = name.endsWith(".docx");
@@ -390,7 +578,14 @@ function renderMessage(role, text, sources, timestamp) {
 
   const bubble = document.createElement("div");
   bubble.className = "message";
-  bubble.textContent = text;
+  if (role === "assistant" && window.marked && window.DOMPurify) {
+    // Gemini answers in Markdown. Sanitize the HTML because answers can quote
+    // uploaded documents, which could otherwise smuggle in scripts.
+    bubble.classList.add("markdown");
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+  } else {
+    bubble.textContent = text;
+  }
 
   if (sources && sources.length) {
     const details = document.createElement("details");
@@ -440,3 +635,5 @@ function renderMessage(role, text, sources, timestamp) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return row;
 }
+
+boot();

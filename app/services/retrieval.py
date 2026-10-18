@@ -50,6 +50,8 @@ class BM25Index:
         self.ids = ids
         self.documents = documents
         self.document_ids = [m["document_id"] for m in metadatas]
+        # v1 chunks were stored without an owner; they never match any user.
+        self.user_ids = [m.get("user_id") for m in metadatas]
         self.term_counts = [Counter(tokenize(d)) for d in documents]
         self.lengths = [sum(c.values()) for c in self.term_counts]
         self.avg_length = (sum(self.lengths) / len(self.lengths)) if self.lengths else 0.0
@@ -63,7 +65,9 @@ class BM25Index:
     def __len__(self):
         return len(self.ids)
 
-    def search(self, query: str, top_k: int, document_ids: list[str] | None = None) -> list[str]:
+    def search(
+        self, query: str, top_k: int, user_id: str, document_ids: list[str] | None = None
+    ) -> list[str]:
         query_terms = [t for t in tokenize(query) if t in self.idf]
         if not query_terms:
             return []
@@ -71,6 +75,8 @@ class BM25Index:
         allowed = set(document_ids) if document_ids else None
         scored = []
         for i, counts in enumerate(self.term_counts):
+            if self.user_ids[i] != user_id:
+                continue
             if allowed is not None and self.document_ids[i] not in allowed:
                 continue
             score = 0.0
@@ -108,32 +114,42 @@ def reciprocal_rank_fusion(ranked_lists: list[list[str]]) -> list[str]:
     return sorted(scores, key=scores.get, reverse=True)
 
 
-def store_chunks(document_id: str, chunks: list[str], embeddings: list[list[float]]):
+def store_chunks(user_id: str, document_id: str, chunks: list[str], embeddings: list[list[float]]):
+    if not chunks:
+        return
     ids = [f"{document_id}-{i}" for i in range(len(chunks))]
-    metadatas = [{"document_id": document_id} for _ in chunks]
+    metadatas = [{"document_id": document_id, "user_id": user_id} for _ in chunks]
     collection.add(ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas)
 
 
-def semantic_search(query_embedding: list[float], top_k: int, document_ids: list[str] | None = None) -> list[str]:
-    where = {"document_id": {"$in": document_ids}} if document_ids else None
+def semantic_search(
+    query_embedding: list[float], top_k: int, user_id: str, document_ids: list[str] | None = None
+) -> list[str]:
+    where = {"user_id": user_id}
+    if document_ids:
+        where = {"$and": [where, {"document_id": {"$in": document_ids}}]}
     results = collection.query(query_embeddings=[query_embedding], n_results=top_k, where=where)
     return results["ids"][0]
 
 
-def keyword_search(query: str, top_k: int, document_ids: list[str] | None = None) -> list[str]:
-    return _get_bm25_index().search(query, top_k, document_ids)
+def keyword_search(
+    query: str, top_k: int, user_id: str, document_ids: list[str] | None = None
+) -> list[str]:
+    return _get_bm25_index().search(query, top_k, user_id, document_ids)
 
 
 def search(
     query: str,
     query_embedding: list[float],
+    user_id: str,
     top_k: int = 5,
     document_ids: list[str] | None = None,
 ) -> list[str]:
+    """Only ever returns chunks owned by user_id."""
     candidates = top_k * CANDIDATE_MULTIPLIER
     fused = reciprocal_rank_fusion([
-        semantic_search(query_embedding, candidates, document_ids),
-        keyword_search(query, candidates, document_ids),
+        semantic_search(query_embedding, candidates, user_id, document_ids),
+        keyword_search(query, candidates, user_id, document_ids),
     ])[:top_k]
     if not fused:
         return []

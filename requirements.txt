@@ -8,3 +8,5 @@ pydantic==2.13.5
 voyageai==0.5.0
 pypdf==6.16.2
 python-docx==1.2.0
+PyJWT==2.15.1
+bcrypt==5.0.0

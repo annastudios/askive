@@ -1,4 +1,5 @@
 import httpx
+import voyageai.error
 from google.genai._gaos.lib.compat_errors import APIStatusError
 
 DOC = (
@@ -71,3 +72,25 @@ def test_chat_returns_503_when_gemini_quota_exhausted(client, fake_gemini):
     response = client.post("/chat/", json={"question": "Hi?", "session_id": "s1"})
 
     assert response.status_code == 503
+
+
+def test_upload_returns_clear_429_when_voyage_rate_limited(client, fake_voyage):
+    fake_voyage.error = voyageai.error.RateLimitError("reduced rate limits of 3 RPM and 10K TPM")
+
+    response = client.post("/upload/", files={"file": ("big.txt", DOC.encode(), "text/plain")})
+
+    assert response.status_code == 429
+    assert "rate limit" in response.json()["detail"]
+    assert response.headers["Retry-After"] == "60"
+    # Nothing half-saved: the failed upload doesn't appear in the document list.
+    assert client.get("/documents/").json() == []
+
+
+def test_chat_returns_clear_429_when_voyage_rate_limited(client, fake_voyage, fake_gemini):
+    fake_voyage.error = voyageai.error.RateLimitError("reduced rate limits")
+
+    response = client.post("/chat/", json={"question": "Hi?", "session_id": "s1"})
+
+    assert response.status_code == 429
+    assert "rate limit" in response.json()["detail"]
+    assert fake_gemini.prompts == []

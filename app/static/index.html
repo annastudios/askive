@@ -12,9 +12,49 @@
   />
   <link rel="stylesheet" href="/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
 <body>
-  <div class="shell">
+  <div id="auth-screen" class="auth-screen" hidden>
+    <form id="auth-form" class="auth-card">
+      <div class="brand auth-brand">
+        <svg class="logo-mark" width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Own gradient: the topbar's lives inside the hidden app shell and wouldn't render here. -->
+          <defs>
+            <linearGradient id="authLogoGradient" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#8b7bff" />
+              <stop offset="100%" stop-color="#4f7fff" />
+            </linearGradient>
+          </defs>
+          <rect width="40" height="40" rx="12" fill="url(#authLogoGradient)" />
+          <path
+            d="M11 14.5C11 12.567 12.567 11 14.5 11H25.5C27.433 11 29 12.567 29 14.5V21.5C29 23.433 27.433 25 25.5 25H18.8L14.2 28.6C13.8 28.9 13.25 28.6 13.25 28.1V25H14.5C12.567 25 11 23.433 11 21.5V14.5Z"
+            fill="white"
+            fill-opacity="0.95"
+          />
+        </svg>
+        <span class="wordmark">Askive</span>
+      </div>
+      <h1 id="auth-title" class="auth-title">Sign in</h1>
+      <label class="auth-field">
+        <span>Username</span>
+        <input id="auth-username" name="username" autocomplete="username" required />
+      </label>
+      <label class="auth-field">
+        <span>Password</span>
+        <input id="auth-password" name="password" type="password" autocomplete="current-password" required />
+      </label>
+      <p id="auth-error" class="auth-error" role="alert"></p>
+      <button id="auth-submit" type="submit">Sign in</button>
+      <p class="auth-switch">
+        <span id="auth-switch-text">New here?</span>
+        <button id="auth-switch-btn" class="link-btn" type="button">Create an account</button>
+      </p>
+    </form>
+  </div>
+
+  <div class="shell" id="app-shell" hidden>
     <header class="topbar">
       <div class="brand">
         <svg class="logo-mark" width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -53,6 +93,8 @@
           </svg>
           New chat
         </button>
+        <span id="user-chip" class="user-chip"></span>
+        <button id="sign-out-btn" class="ghost-btn" type="button">Sign out</button>
       </div>
     </header>
 

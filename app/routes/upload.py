@@ -2,10 +2,12 @@ import io
 import uuid
 
 from docx import Document as DocxDocument
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter, Depends, UploadFile
 from pypdf import PdfReader
 
+from app.auth import get_current_user
 from app.models.schemas import UploadResponse
+from app.services import users
 from app.services.chunking import chunk_text
 from app.services.embeddings import embed_texts
 from app.services.retrieval import store_chunks
@@ -25,7 +27,7 @@ def _extract_text(filename: str, raw: bytes) -> str:
 
 
 @router.post("/", response_model=UploadResponse)
-def upload_document(file: UploadFile):
+def upload_document(file: UploadFile, user: dict = Depends(get_current_user)):
     raw = file.file.read()
     text = _extract_text(file.filename, raw)
 
@@ -33,6 +35,7 @@ def upload_document(file: UploadFile):
     embeddings = embed_texts(chunks, input_type="document")
 
     document_id = str(uuid.uuid4())
-    store_chunks(document_id, chunks, embeddings)
+    store_chunks(user["id"], document_id, chunks, embeddings)
+    users.add_document(user["id"], document_id, file.filename, len(chunks))
 
     return UploadResponse(document_id=document_id, chunks_created=len(chunks))

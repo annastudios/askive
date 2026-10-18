@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 # Private import: google-genai's public `google.genai.errors` classes don't
 # cover the Interactions API - it raises this internal exception type instead.
 from google.genai._gaos.lib.compat_errors import APIStatusError
 
+from app.auth import get_current_user
 from app.config import gemini_client, GEMINI_MODEL
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services import memory
@@ -13,12 +14,16 @@ router = APIRouter()
 
 
 @router.post("/", response_model=ChatResponse)
-def ask_question(request: ChatRequest):
-    history = memory.get_history(request.session_id)
-    search_query = memory.build_search_query(request.session_id, request.question)
+def ask_question(request: ChatRequest, user: dict = Depends(get_current_user)):
+    # Namespaced so one user can't read another's conversation by guessing a session id.
+    session_key = f"{user['id']}:{request.session_id}"
+    history = memory.get_history(session_key)
+    search_query = memory.build_search_query(session_key, request.question)
 
     query_embedding = embed_text(search_query, input_type="query")
-    chunks = search(search_query, query_embedding, document_ids=request.document_ids or None)
+    chunks = search(
+        search_query, query_embedding, user_id=user["id"], document_ids=request.document_ids or None
+    )
 
     context = "\n\n".join(chunks)
     transcript = "\n".join(f"Q: {t['question']}\nA: {t['answer']}" for t in history[-3:])
@@ -45,6 +50,6 @@ def ask_question(request: ChatRequest):
 
     answer = interaction.output_text.strip()
 
-    memory.add_turn(request.session_id, request.question, answer)
+    memory.add_turn(session_key, request.question, answer)
 
     return ChatResponse(answer=answer, sources=chunks)

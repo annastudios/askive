@@ -8,13 +8,18 @@ import hashlib
 import math
 import os
 import tempfile
+import uuid
 from types import SimpleNamespace
 
 # Must be set before anything under app/ is imported: config.py reads
 # these at import time and retrieval.py opens ChromaDB at import time.
 os.environ["GEMINI_API_KEY"] = "test-key"
 os.environ["VOYAGE_API_KEY"] = "test-key"
-os.environ["CHROMA_DB_PATH"] = tempfile.mkdtemp(prefix="askive-test-chroma-")
+_tmp = tempfile.mkdtemp(prefix="askive-test-")
+os.environ["CHROMA_DB_PATH"] = os.path.join(_tmp, "chroma")
+os.environ["DATABASE_PATH"] = os.path.join(_tmp, "askive.db")
+TEST_JWT_SECRET = "test-secret-that-is-at-least-32-bytes-long"
+os.environ["JWT_SECRET"] = TEST_JWT_SECRET
 
 import pytest
 from fastapi.testclient import TestClient
@@ -39,7 +44,12 @@ def fake_embedding(text: str) -> list[float]:
 
 
 class FakeVoyageClient:
+    def __init__(self):
+        self.error: Exception | None = None
+
     def embed(self, texts, model=None, input_type=None):
+        if self.error:
+            raise self.error
         return SimpleNamespace(embeddings=[fake_embedding(t) for t in texts])
 
 
@@ -57,7 +67,9 @@ class FakeInteractions:
 
 @pytest.fixture(autouse=True)
 def fake_voyage(monkeypatch):
-    monkeypatch.setattr(embeddings, "client", FakeVoyageClient())
+    voyage = FakeVoyageClient()
+    monkeypatch.setattr(embeddings, "client", voyage)
+    return voyage
 
 
 @pytest.fixture
@@ -72,6 +84,24 @@ def clear_memory():
     memory.session_history.clear()
 
 
+def sign_up(client: TestClient, username: str | None = None, password: str = "correct-horse") -> dict:
+    """Registers a fresh user, logs in, and puts the token on the client.
+    Returns the user."""
+    username = username or f"user_{uuid.uuid4().hex[:8]}"
+    user = client.post("/auth/register", json={"username": username, "password": password}).json()
+    token = client.post("/auth/login", data={"username": username, "password": password}).json()
+    client.headers["Authorization"] = f"Bearer {token['access_token']}"
+    return user
+
+
+@pytest.fixture
+def anon_client():
+    return TestClient(app)
+
+
 @pytest.fixture
 def client():
-    return TestClient(app)
+    """A client already signed in as a brand-new user."""
+    c = TestClient(app)
+    sign_up(c)
+    return c
