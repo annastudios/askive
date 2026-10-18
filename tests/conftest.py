@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routes import chat
-from app.services import embeddings, memory
+from app.services import cache, embeddings
 
 DIMENSIONS = 64
 
@@ -46,10 +46,12 @@ def fake_embedding(text: str) -> list[float]:
 class FakeVoyageClient:
     def __init__(self):
         self.error: Exception | None = None
+        self.calls: list[list[str]] = []
 
     def embed(self, texts, model=None, input_type=None):
         if self.error:
             raise self.error
+        self.calls.append(list(texts))
         return SimpleNamespace(embeddings=[fake_embedding(t) for t in texts])
 
 
@@ -80,8 +82,11 @@ def fake_gemini(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def clear_memory():
-    memory.session_history.clear()
+def fresh_cache(monkeypatch):
+    """Each test starts with an empty cache and chat memory."""
+    store = cache.InMemoryStore()
+    monkeypatch.setattr(cache, "store", store)
+    return store
 
 
 def sign_up(client: TestClient, username: str | None = None, password: str = "correct-horse") -> dict:

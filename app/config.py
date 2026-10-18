@@ -14,6 +14,9 @@ CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./data/chroma_db")
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/askive.db")
+# Unset means an in-process cache: fine for one local server, but not shared between replicas.
+REDIS_URL = os.getenv("REDIS_URL")
+CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
 

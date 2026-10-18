@@ -33,4 +33,16 @@ async def health():
     return {"status": "ok"}
 
 
-app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
+class RevalidatedStaticFiles(StaticFiles):
+    """Without a Cache-Control header browsers may reuse a cached app.js
+    without asking, so users keep running old frontend code after a deploy.
+    `no-cache` makes them check every time; unchanged files still come back
+    as a tiny 304 thanks to the ETag StaticFiles already sends."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", RevalidatedStaticFiles(directory="app/static", html=True), name="static")

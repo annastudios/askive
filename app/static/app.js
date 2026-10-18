@@ -31,7 +31,11 @@ const appShellEl = document.getElementById("app-shell");
 const userChipEl = document.getElementById("user-chip");
 const signOutBtn = document.getElementById("sign-out-btn");
 
-let documents = [];
+// Documents attached to the *current chat* - questions only search these.
+let documents = []; // {id, name, chunks, file}
+// Original files uploaded since this page loaded, for previews. The server
+// only keeps chunks, so documents from before a reload can't be previewed.
+const localFiles = new Map(); // document id -> File
 let selectedDocId = null;
 let previewObjectUrl = null;
 let currentUser = null;
@@ -159,6 +163,7 @@ function signOut(message = "") {
   setToken(null);
   currentUser = null;
   documents = [];
+  localFiles.clear();
   selectedDocId = null;
   sessionId = crypto.randomUUID();
   currentMessages = [];
@@ -178,20 +183,7 @@ async function enterApp() {
 
   authScreenEl.hidden = true;
   appShellEl.hidden = false;
-  await loadDocuments();
   questionInput.focus();
-}
-
-async function loadDocuments() {
-  const res = await apiFetch("/documents/");
-  if (!res.ok) return;
-  documents = (await res.json()).map((d) => ({
-    id: d.id,
-    name: d.filename,
-    file: null, // the original file isn't kept server-side, so no preview after a reload
-    chunks: d.chunks,
-  }));
-  renderDocList();
 }
 
 async function boot() {
@@ -244,6 +236,7 @@ uploadBtn.addEventListener("click", async () => {
     if (!res.ok) throw new Error(await errorMessage(res));
     const data = await res.json();
 
+    localFiles.set(data.document_id, file);
     documents.push({
       id: data.document_id,
       name: file.name,
@@ -252,6 +245,7 @@ uploadBtn.addEventListener("click", async () => {
     });
     renderDocList();
     selectDocument(data.document_id);
+    persistCurrentSession();
 
     setUploadStatus(`Uploaded — ${data.chunks_created} chunks created.`, false);
     fileInput.value = "";
@@ -284,6 +278,11 @@ chatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const question = questionInput.value.trim();
   if (!question) return;
+
+  if (documents.length === 0) {
+    setUploadStatus("Upload a document to this chat first — questions only search this chat's documents.", true);
+    return;
+  }
 
   removeEmptyState();
   addMessage("user", question);
@@ -350,11 +349,17 @@ function saveHistory(history) {
 }
 
 function persistCurrentSession() {
-  if (currentMessages.length === 0) return;
+  if (currentMessages.length === 0 && documents.length === 0) return;
   const history = loadHistory();
   const firstUserMsg = currentMessages.find((m) => m.role === "user");
-  const title = firstUserMsg ? firstUserMsg.text.slice(0, 60) : "New chat";
-  const entry = { sessionId, title, messages: currentMessages, updatedAt: Date.now() };
+  const title = firstUserMsg ? firstUserMsg.text.slice(0, 60) : documents[0]?.name || "New chat";
+  const entry = {
+    sessionId,
+    title,
+    messages: currentMessages,
+    documents: documents.map(({ id, name, chunks }) => ({ id, name, chunks })),
+    updatedAt: Date.now(),
+  };
   const idx = history.findIndex((h) => h.sessionId === sessionId);
   if (idx >= 0) history[idx] = entry;
   else history.unshift(entry);
@@ -366,6 +371,8 @@ function startNewChat() {
   sessionId = crypto.randomUUID();
   currentMessages = [];
   messagesEl.innerHTML = EMPTY_STATE_HTML;
+  showDocuments([]);
+  setUploadStatus("", false);
   historyPanelEl.classList.remove("open");
 }
 
@@ -376,11 +383,29 @@ function loadSession(id) {
 
   sessionId = entry.sessionId;
   currentMessages = [...entry.messages];
-  messagesEl.innerHTML = "";
+  messagesEl.innerHTML = currentMessages.length ? "" : EMPTY_STATE_HTML;
   for (const m of currentMessages) {
     renderMessage(m.role, m.text, m.sources, m.timestamp);
   }
+  showDocuments(entry.documents || []);
+  setUploadStatus("", false);
   historyPanelEl.classList.remove("open");
+}
+
+// Swaps the document panel over to another chat's documents.
+function showDocuments(docs) {
+  documents = docs.map((d) => ({ ...d, file: localFiles.get(d.id) || null }));
+  selectedDocId = null;
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+  renderDocList();
+  if (documents.length) {
+    selectDocument(documents[documents.length - 1].id);
+  } else {
+    docPreviewEl.innerHTML = '<div class="doc-preview-empty">Upload a document to this chat to start asking about it.</div>';
+  }
 }
 
 function renderHistoryList() {

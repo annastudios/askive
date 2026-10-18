@@ -11,12 +11,19 @@ comparable in similarity search.
 """
 
 
+import hashlib
+import json
+
 import voyageai
 import voyageai.error
 
 from app.config import VOYAGE_API_KEY, EMBEDDING_MODEL
+from app.services import cache
 
 client = voyageai.Client(api_key=VOYAGE_API_KEY)
+
+# Embeddings for a given text and model never change, so they can live long.
+EMBEDDING_CACHE_TTL_SECONDS = 7 * 24 * 3600
 
 
 class EmbeddingRateLimited(Exception):
@@ -34,4 +41,12 @@ def embed_texts(texts: list[str], input_type: str = "document") -> list[list[flo
 
 
 def embed_text(text: str, input_type: str = "document") -> list[float]:
-    return embed_texts([text], input_type=input_type)[0]
+    # Questions repeat a lot; caching their vectors saves a Voyage call each
+    # time, which matters with the free tier's 3 requests per minute.
+    key = f"embedding:{EMBEDDING_MODEL}:{input_type}:{hashlib.sha256(text.encode()).hexdigest()}"
+    cached = cache.store.get(key)
+    if cached:
+        return json.loads(cached)
+    vector = embed_texts([text], input_type=input_type)[0]
+    cache.store.set(key, json.dumps(vector), ex=EMBEDDING_CACHE_TTL_SECONDS)
+    return vector

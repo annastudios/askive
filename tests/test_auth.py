@@ -104,6 +104,7 @@ def test_chat_memory_is_separate_per_user(client, fake_gemini):
 
     other = TestClient(app)
     sign_up(other)
-    other.post("/chat/", json={"question": "Hello?", "session_id": "shared"})
+    their_doc = upload(other)["document_id"]
+    other.post("/chat/", json={"question": "Hello?", "session_id": "shared", "document_ids": [their_doc]})
 
     assert "Private question?" not in fake_gemini.prompts[-1]

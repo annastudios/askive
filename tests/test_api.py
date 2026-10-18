@@ -20,6 +20,17 @@ def test_health(client):
     assert response.json() == {"status": "ok"}
 
 
+def test_frontend_files_are_always_revalidated(anon_client):
+    for path in ["/", "/app.js", "/style.css"]:
+        response = anon_client.get(path)
+        assert response.status_code == 200
+        assert response.headers["Cache-Control"] == "no-cache"
+        assert "etag" in response.headers
+
+    etag = anon_client.get("/app.js").headers["etag"]
+    assert anon_client.get("/app.js", headers={"If-None-Match": etag}).status_code == 304
+
+
 def test_upload_txt(client):
     body = upload(client)
     assert body["document_id"]
@@ -63,13 +74,26 @@ def test_chat_includes_recent_conversation(client, fake_gemini):
     assert "Q: How long do refunds take?\nA: Fake answer." in fake_gemini.prompts[1]
 
 
+def test_chat_without_documents_is_rejected_not_searched_across_everything(client, fake_gemini, fake_voyage):
+    upload(client)  # the user owns a document, but this chat has none attached
+    calls_after_upload = len(fake_voyage.calls)
+
+    response = client.post("/chat/", json={"question": "What is this about?", "session_id": "new-chat"})
+
+    assert response.status_code == 400
+    assert "no documents" in response.json()["detail"]
+    assert fake_gemini.prompts == []
+    assert len(fake_voyage.calls) == calls_after_upload
+
+
 def test_chat_returns_503_when_gemini_quota_exhausted(client, fake_gemini):
+    doc_id = upload(client)["document_id"]
     request = httpx.Request("POST", "https://example.invalid")
     fake_gemini.error = APIStatusError(
         "quota", response=httpx.Response(429, request=request), body=None
     )
 
-    response = client.post("/chat/", json={"question": "Hi?", "session_id": "s1"})
+    response = client.post("/chat/", json={"question": "Hi?", "session_id": "s1", "document_ids": [doc_id]})
 
     assert response.status_code == 503
 
@@ -87,9 +111,10 @@ def test_upload_returns_clear_429_when_voyage_rate_limited(client, fake_voyage):
 
 
 def test_chat_returns_clear_429_when_voyage_rate_limited(client, fake_voyage, fake_gemini):
+    doc_id = upload(client)["document_id"]
     fake_voyage.error = voyageai.error.RateLimitError("reduced rate limits")
 
-    response = client.post("/chat/", json={"question": "Hi?", "session_id": "s1"})
+    response = client.post("/chat/", json={"question": "Hi?", "session_id": "s1", "document_ids": [doc_id]})
 
     assert response.status_code == 429
     assert "rate limit" in response.json()["detail"]

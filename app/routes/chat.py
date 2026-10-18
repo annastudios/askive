@@ -6,7 +6,7 @@ from google.genai._gaos.lib.compat_errors import APIStatusError
 from app.auth import get_current_user
 from app.config import gemini_client, GEMINI_MODEL
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services import memory
+from app.services import answer_cache, memory
 from app.services.embeddings import embed_text
 from app.services.retrieval import search
 
@@ -15,18 +15,27 @@ router = APIRouter()
 
 @router.post("/", response_model=ChatResponse)
 def ask_question(request: ChatRequest, user: dict = Depends(get_current_user)):
+    # Each chat searches only the documents attached to it. An empty list used to
+    # mean "search everything this user ever uploaded", which mixed unrelated
+    # documents into answers - now it's an error instead.
+    if not request.document_ids:
+        raise HTTPException(status_code=400, detail="This chat has no documents yet. Upload a document first.")
+
     # Namespaced so one user can't read another's conversation by guessing a session id.
     session_key = f"{user['id']}:{request.session_id}"
     history = memory.get_history(session_key)
-    search_query = memory.build_search_query(session_key, request.question)
+    transcript = "\n".join(f"Q: {t['question']}\nA: {t['answer']}" for t in history[-3:])
 
+    cached = answer_cache.get(user["id"], request.question, request.document_ids, transcript)
+    if cached:
+        memory.add_turn(session_key, request.question, cached["answer"])
+        return ChatResponse(answer=cached["answer"], sources=cached["sources"], cached=True)
+
+    search_query = memory.build_search_query(session_key, request.question)
     query_embedding = embed_text(search_query, input_type="query")
-    chunks = search(
-        search_query, query_embedding, user_id=user["id"], document_ids=request.document_ids or None
-    )
+    chunks = search(search_query, query_embedding, user_id=user["id"], document_ids=request.document_ids)
 
     context = "\n\n".join(chunks)
-    transcript = "\n".join(f"Q: {t['question']}\nA: {t['answer']}" for t in history[-3:])
     history_block = f"Recent conversation:\n{transcript}\n\n" if transcript else ""
 
     prompt = (
@@ -51,5 +60,6 @@ def ask_question(request: ChatRequest, user: dict = Depends(get_current_user)):
     answer = interaction.output_text.strip()
 
     memory.add_turn(session_key, request.question, answer)
+    answer_cache.put(user["id"], request.question, request.document_ids, transcript, answer, chunks)
 
     return ChatResponse(answer=answer, sources=chunks)

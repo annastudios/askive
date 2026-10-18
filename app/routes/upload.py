@@ -7,7 +7,7 @@ from pypdf import PdfReader
 
 from app.auth import get_current_user
 from app.models.schemas import UploadResponse
-from app.services import users
+from app.services import answer_cache, users
 from app.services.chunking import chunk_text
 from app.services.embeddings import embed_texts
 from app.services.retrieval import store_chunks
@@ -37,5 +37,6 @@ def upload_document(file: UploadFile, user: dict = Depends(get_current_user)):
     document_id = str(uuid.uuid4())
     store_chunks(user["id"], document_id, chunks, embeddings)
     users.add_document(user["id"], document_id, file.filename, len(chunks))
+    answer_cache.documents_changed(user["id"])
 
     return UploadResponse(document_id=document_id, chunks_created=len(chunks))
