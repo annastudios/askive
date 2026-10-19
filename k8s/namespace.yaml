@@ -1,0 +1,6 @@
+# A namespace is a folder for cluster objects: everything Askive needs
+# lives in "askive", so it can be listed or deleted as one unit.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: askive

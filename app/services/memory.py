@@ -8,8 +8,10 @@ Example:
   Follow-up: "What about digital products?"
   Search query: "What's the refund policy? What about digital products?"
 
-Start simple: an in-memory dict of session_id -> list of turns.
-This resets when the server restarts, which is fine for v1.
+Turns are stored as a list in the cache store (see cache.py), so with
+Redis they survive restarts and are shared by every API replica. Only
+the most recent MAX_TURNS are kept, and an idle session expires after
+SESSION_TTL_SECONDS.
 
 Note: this used to call Gemini to rewrite the follow-up into a
 standalone question. That cost a full extra LLM call per turn,
@@ -21,17 +23,27 @@ Gemini itself resolves the reference precisely when generating
 the answer.
 """
 
-session_history: dict[str, list[dict]] = {}
+import json
+
+from app.services import cache
+
+MAX_TURNS = 10
+SESSION_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _key(session_id: str) -> str:
+    return f"memory:{session_id}"
 
 
 def get_history(session_id: str) -> list[dict]:
-    return session_history.get(session_id, [])
+    return [json.loads(turn) for turn in cache.store.lrange(_key(session_id), 0, -1)]
 
 
 def add_turn(session_id: str, question: str, answer: str):
-    session_history.setdefault(session_id, []).append(
-        {"question": question, "answer": answer}
-    )
+    key = _key(session_id)
+    cache.store.rpush(key, json.dumps({"question": question, "answer": answer}))
+    cache.store.ltrim(key, -MAX_TURNS, -1)
+    cache.store.expire(key, SESSION_TTL_SECONDS)
 
 
 def build_search_query(session_id: str, question: str) -> str:

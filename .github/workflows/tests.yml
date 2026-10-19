@@ -1,0 +1,50 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # The same suite runs twice: on SQLite (local dev) and on Postgres
+    # (docker-compose / Kubernetes).
+    strategy:
+      matrix:
+        database: [sqlite, postgres]
+    name: test (${{ matrix.database }})
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: askive
+          POSTGRES_PASSWORD: askive
+          POSTGRES_DB: askive
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U askive"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://askive:askive@localhost:5432/askive' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Voyage and Gemini are faked in tests/conftest.py, so no real API keys are needed.
+      - name: Run tests
+        run: pytest -v

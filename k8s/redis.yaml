@@ -1,0 +1,69 @@
+# Redis: answer/embedding cache and chat memory, shared by every API pod.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: askive
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: askive
+spec:
+  replicas: 1
+  # One disk, one writer: stop the old pod before starting a new one.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      # Don't inject legacy service-link env vars (e.g. CHROMA_PORT=tcp://...):
+      # ChromaDB reads every CHROMA_* variable as its own config and crashes on it.
+      # Pods find each other by DNS name instead (chroma, redis).
+      enableServiceLinks: false
+      containers:
+        - name: redis
+          image: redis:8.2-alpine
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { cpu: 250m, memory: 128Mi }
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 15
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: askive
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379

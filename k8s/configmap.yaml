@@ -1,0 +1,17 @@
+# Ordinary (non-secret) settings, passed to the API as environment
+# variables. Secrets (API keys, JWT_SECRET, the Postgres password and
+# DATABASE_URL, which contains it) live in the askive-secrets
+# Secret instead - see secret.example.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: askive-config
+  namespace: askive
+data:
+  # Service names below are DNS names inside the cluster.
+  CHROMA_HOST: chroma
+  CHROMA_PORT: "8000"
+  REDIS_URL: redis://redis:6379/0
+  EMBEDDING_MODEL: voyage-3
+  CACHE_TTL_SECONDS: "3600"
+  JWT_EXPIRE_MINUTES: "1440"

@@ -1,4 +1,4 @@
-const HISTORY_KEY = "askive_chat_history";
+const TOKEN_KEY = "askive_token";
 
 let sessionId = crypto.randomUUID();
 let currentMessages = []; // {role, text, sources, timestamp}
@@ -18,9 +18,28 @@ const chatForm = document.getElementById("chat-form");
 const questionInput = document.getElementById("question-input");
 const sendBtn = document.getElementById("send-btn");
 
-const documents = [];
+const authScreenEl = document.getElementById("auth-screen");
+const authForm = document.getElementById("auth-form");
+const authTitle = document.getElementById("auth-title");
+const authEmail = document.getElementById("auth-email");
+const authPassword = document.getElementById("auth-password");
+const authError = document.getElementById("auth-error");
+const authSubmit = document.getElementById("auth-submit");
+const authSwitchText = document.getElementById("auth-switch-text");
+const authSwitchBtn = document.getElementById("auth-switch-btn");
+const appShellEl = document.getElementById("app-shell");
+const userChipEl = document.getElementById("user-chip");
+const signOutBtn = document.getElementById("sign-out-btn");
+
+// Documents attached to the *current chat* - questions only search these.
+let documents = []; // {id, name, chunks, file}
+// Original files uploaded since this page loaded, for previews. The server
+// only keeps chunks, so documents from before a reload can't be previewed.
+const localFiles = new Map(); // document id -> File
 let selectedDocId = null;
 let previewObjectUrl = null;
+let currentUser = null;
+let authMode = "login"; // or "register"
 
 const EMPTY_STATE_HTML = `
   <div class="empty-state">
@@ -33,6 +52,154 @@ const EMPTY_STATE_HTML = `
     <p>Upload a document on the right, then ask anything about it.</p>
   </div>
 `;
+
+// --- Auth ---
+
+function getToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // localStorage unavailable - you'll just need to sign in again after a reload.
+  }
+}
+
+class SignedOutError extends Error {}
+
+// fetch() with the login token attached. A 401 means the token is missing
+// or expired, so drop back to the sign-in screen.
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401) {
+    signOut("Your session expired — please sign in again.");
+    throw new SignedOutError();
+  }
+  return res;
+}
+
+async function errorMessage(res) {
+  try {
+    const body = await res.json();
+    if (typeof body.detail === "string") return body.detail;
+    if (Array.isArray(body.detail)) {
+      return body.detail.map((d) => `${d.loc[d.loc.length - 1]}: ${d.msg}`).join("; ");
+    }
+  } catch {
+    // not JSON
+  }
+  return `${res.status} ${res.statusText}`;
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isLogin = mode === "login";
+  authTitle.textContent = isLogin ? "Sign in" : "Create an account";
+  authSubmit.textContent = isLogin ? "Sign in" : "Create account";
+  authSwitchText.textContent = isLogin ? "New here?" : "Already have an account?";
+  authSwitchBtn.textContent = isLogin ? "Create an account" : "Sign in";
+  authPassword.autocomplete = isLogin ? "current-password" : "new-password";
+  authError.textContent = "";
+}
+
+authSwitchBtn.addEventListener("click", () => {
+  setAuthMode(authMode === "login" ? "register" : "login");
+});
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = authEmail.value.trim().toLowerCase();
+  const password = authPassword.value;
+  authError.textContent = "";
+  authSubmit.disabled = true;
+
+  try {
+    if (authMode === "register") {
+      const res = await fetch("/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) throw new Error(await errorMessage(res));
+    }
+
+    const res = await fetch("/auth/login", {
+      method: "POST",
+      // OAuth2 calls this field "username"; Askive puts the email in it.
+      body: new URLSearchParams({ username: email, password }),
+    });
+    if (!res.ok) throw new Error(await errorMessage(res));
+    const { access_token } = await res.json();
+    setToken(access_token);
+    authPassword.value = "";
+    await enterApp();
+  } catch (err) {
+    authError.textContent = err.message;
+  } finally {
+    authSubmit.disabled = false;
+  }
+});
+
+signOutBtn.addEventListener("click", () => signOut());
+
+function showAuthScreen(message = "") {
+  appShellEl.hidden = true;
+  authScreenEl.hidden = false;
+  authError.textContent = message;
+  authEmail.focus();
+}
+
+function signOut(message = "") {
+  if (currentUser) persistCurrentSession();
+  setToken(null);
+  currentUser = null;
+  documents = [];
+  localFiles.clear();
+  selectedDocId = null;
+  sessionId = crypto.randomUUID();
+  currentMessages = [];
+  messagesEl.innerHTML = EMPTY_STATE_HTML;
+  docListEl.innerHTML = "";
+  docPreviewEl.innerHTML = '<div class="doc-preview-empty">Select a document to preview it here.</div>';
+  setUploadStatus("", false);
+  setAuthMode("login");
+  showAuthScreen(message);
+}
+
+async function enterApp() {
+  const res = await apiFetch("/auth/me");
+  if (!res.ok) throw new Error(await errorMessage(res));
+  currentUser = await res.json();
+  userChipEl.textContent = currentUser.email;
+
+  authScreenEl.hidden = true;
+  appShellEl.hidden = false;
+  questionInput.focus();
+}
+
+async function boot() {
+  if (!getToken()) {
+    showAuthScreen();
+    return;
+  }
+  try {
+    await enterApp();
+  } catch (err) {
+    if (!(err instanceof SignedOutError)) signOut(`Couldn't load your account: ${err.message}`);
+  }
+}
+
+// --- Upload & chat ---
 
 fileInput.addEventListener("change", () => {
   fileNameLabel.textContent = fileInput.files[0]?.name || "Add a PDF, Word, or text file…";
@@ -66,10 +233,11 @@ uploadBtn.addEventListener("click", async () => {
   setUploadStatus("Uploading and chunking…", false);
 
   try {
-    const res = await fetch("/upload/", { method: "POST", body: formData });
-    if (!res.ok) throw new Error(await res.text());
+    const res = await apiFetch("/upload/", { method: "POST", body: formData });
+    if (!res.ok) throw new Error(await errorMessage(res));
     const data = await res.json();
 
+    localFiles.set(data.document_id, file);
     documents.push({
       id: data.document_id,
       name: file.name,
@@ -78,11 +246,13 @@ uploadBtn.addEventListener("click", async () => {
     });
     renderDocList();
     selectDocument(data.document_id);
+    persistCurrentSession();
 
     setUploadStatus(`Uploaded — ${data.chunks_created} chunks created.`, false);
     fileInput.value = "";
     fileNameLabel.textContent = "Add a PDF, Word, or text file…";
   } catch (err) {
+    if (err instanceof SignedOutError) return;
     setUploadStatus(`Upload failed: ${err.message}`, true);
   } finally {
     uploadBtn.disabled = false;
@@ -110,6 +280,11 @@ chatForm.addEventListener("submit", async (e) => {
   const question = questionInput.value.trim();
   if (!question) return;
 
+  if (documents.length === 0) {
+    setUploadStatus("Upload a document to this chat first — questions only search this chat's documents.", true);
+    return;
+  }
+
   removeEmptyState();
   addMessage("user", question);
   questionInput.value = "";
@@ -119,7 +294,7 @@ chatForm.addEventListener("submit", async (e) => {
   const loadingEl = addTypingIndicator();
 
   try {
-    const res = await fetch("/chat/", {
+    const res = await apiFetch("/chat/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -128,13 +303,14 @@ chatForm.addEventListener("submit", async (e) => {
         document_ids: documents.map((d) => d.id),
       }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await errorMessage(res));
     const data = await res.json();
     loadingEl.remove();
     addMessage("assistant", data.answer, data.sources);
     persistCurrentSession();
   } catch (err) {
     loadingEl.remove();
+    if (err instanceof SignedOutError) return;
     addMessage("error", `Something went wrong: ${err.message}`, null, { record: false });
   } finally {
     sendBtn.disabled = false;
@@ -151,11 +327,15 @@ function removeEmptyState() {
   messagesEl.querySelector(".empty-state")?.remove();
 }
 
-// --- Chat history (browser-local) ---
+// --- Chat history (browser-local, separate per user) ---
+
+function historyKey() {
+  return `askive_chat_history:${currentUser?.id}`;
+}
 
 function loadHistory() {
   try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+    return JSON.parse(localStorage.getItem(historyKey())) || [];
   } catch {
     return [];
   }
@@ -163,18 +343,24 @@ function loadHistory() {
 
 function saveHistory(history) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 30)));
+    localStorage.setItem(historyKey(), JSON.stringify(history.slice(0, 30)));
   } catch {
     // localStorage unavailable (private mode, quota, etc.) - history just won't persist.
   }
 }
 
 function persistCurrentSession() {
-  if (currentMessages.length === 0) return;
+  if (currentMessages.length === 0 && documents.length === 0) return;
   const history = loadHistory();
   const firstUserMsg = currentMessages.find((m) => m.role === "user");
-  const title = firstUserMsg ? firstUserMsg.text.slice(0, 60) : "New chat";
-  const entry = { sessionId, title, messages: currentMessages, updatedAt: Date.now() };
+  const title = firstUserMsg ? firstUserMsg.text.slice(0, 60) : documents[0]?.name || "New chat";
+  const entry = {
+    sessionId,
+    title,
+    messages: currentMessages,
+    documents: documents.map(({ id, name, chunks }) => ({ id, name, chunks })),
+    updatedAt: Date.now(),
+  };
   const idx = history.findIndex((h) => h.sessionId === sessionId);
   if (idx >= 0) history[idx] = entry;
   else history.unshift(entry);
@@ -186,6 +372,8 @@ function startNewChat() {
   sessionId = crypto.randomUUID();
   currentMessages = [];
   messagesEl.innerHTML = EMPTY_STATE_HTML;
+  showDocuments([]);
+  setUploadStatus("", false);
   historyPanelEl.classList.remove("open");
 }
 
@@ -196,11 +384,29 @@ function loadSession(id) {
 
   sessionId = entry.sessionId;
   currentMessages = [...entry.messages];
-  messagesEl.innerHTML = "";
+  messagesEl.innerHTML = currentMessages.length ? "" : EMPTY_STATE_HTML;
   for (const m of currentMessages) {
     renderMessage(m.role, m.text, m.sources, m.timestamp);
   }
+  showDocuments(entry.documents || []);
+  setUploadStatus("", false);
   historyPanelEl.classList.remove("open");
+}
+
+// Swaps the document panel over to another chat's documents.
+function showDocuments(docs) {
+  documents = docs.map((d) => ({ ...d, file: localFiles.get(d.id) || null }));
+  selectedDocId = null;
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+  renderDocList();
+  if (documents.length) {
+    selectDocument(documents[documents.length - 1].id);
+  } else {
+    docPreviewEl.innerHTML = '<div class="doc-preview-empty">Upload a document to this chat to start asking about it.</div>';
+  }
 }
 
 function renderHistoryList() {
@@ -305,6 +511,14 @@ async function selectDocument(id) {
 
   docPreviewEl.innerHTML = "";
 
+  if (!doc.file) {
+    const empty = document.createElement("div");
+    empty.className = "doc-preview-empty";
+    empty.textContent = "Preview is only available right after uploading, but you can still chat with this document.";
+    docPreviewEl.appendChild(empty);
+    return;
+  }
+
   const name = doc.name.toLowerCase();
   const isPdf = doc.file.type === "application/pdf" || name.endsWith(".pdf");
   const isDocx = name.endsWith(".docx");
@@ -390,7 +604,14 @@ function renderMessage(role, text, sources, timestamp) {
 
   const bubble = document.createElement("div");
   bubble.className = "message";
-  bubble.textContent = text;
+  if (role === "assistant" && window.marked && window.DOMPurify) {
+    // Gemini answers in Markdown. Sanitize the HTML because answers can quote
+    // uploaded documents, which could otherwise smuggle in scripts.
+    bubble.classList.add("markdown");
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+  } else {
+    bubble.textContent = text;
+  }
 
   if (sources && sources.length) {
     const details = document.createElement("details");
@@ -440,3 +661,5 @@ function renderMessage(role, text, sources, timestamp) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return row;
 }
+
+boot();
