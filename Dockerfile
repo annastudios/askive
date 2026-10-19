@@ -7,6 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_ROOT_USER_ACTION=ignore \
     DATABASE_PATH=/app/data/askive.db \
     CHROMA_DB_PATH=/app/data/chroma_db
+# (Those paths are only fallbacks: compose and Kubernetes set DATABASE_URL
+# and CHROMA_HOST, so the container itself stores nothing.)
 
 WORKDIR /app
 

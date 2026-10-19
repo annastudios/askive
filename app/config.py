@@ -15,7 +15,10 @@ CHROMA_HOST = os.getenv("CHROMA_HOST")  # set to use a ChromaDB server instead o
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
+# Postgres in deployments, e.g. postgresql+psycopg://askive:secret@postgres:5432/askive.
+# Unset means a local SQLite file at DATABASE_PATH (dev and tests).
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/askive.db")
+DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{DATABASE_PATH}"
 # Unset means an in-process cache: fine for one local server, but not shared between replicas.
 REDIS_URL = os.getenv("REDIS_URL")
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "3600"))

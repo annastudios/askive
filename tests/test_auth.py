@@ -5,46 +5,61 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-from tests.conftest import TEST_JWT_SECRET, sign_up
+from tests.conftest import TEST_JWT_SECRET, sign_up, unique_email
 from tests.test_api import upload
 
 
-def test_register_and_login(anon_client):
-    response = anon_client.post("/auth/register", json={"username": "ankita", "password": "s3cret-pass"})
+def test_register_and_login_with_email(anon_client):
+    email = unique_email("ankita")
+    response = anon_client.post("/auth/register", json={"email": email, "password": "s3cret-pass"})
     assert response.status_code == 201
-    assert response.json()["username"] == "ankita"
+    assert response.json()["email"] == email
     assert "password" not in response.text
 
-    login = anon_client.post("/auth/login", data={"username": "ankita", "password": "s3cret-pass"})
+    login = anon_client.post("/auth/login", data={"username": email, "password": "s3cret-pass"})
     assert login.status_code == 200
     token = login.json()["access_token"]
 
     me = anon_client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert me.json()["username"] == "ankita"
+    assert me.json()["email"] == email
 
 
-def test_duplicate_username_rejected_case_insensitively(anon_client):
-    anon_client.post("/auth/register", json={"username": "dupe", "password": "password1"})
-    response = anon_client.post("/auth/register", json={"username": "DUPE", "password": "password2"})
+def test_email_is_case_insensitive(anon_client):
+    email = unique_email("Mixed.Case")
+    response = anon_client.post("/auth/register", json={"email": f"  {email.upper()} ", "password": "password1"})
+    assert response.json()["email"] == email.lower()
+
+    login = anon_client.post("/auth/login", data={"username": email.title(), "password": "password1"})
+    assert login.status_code == 200
+
+
+def test_duplicate_email_rejected_case_insensitively(anon_client):
+    email = unique_email("dupe")
+    anon_client.post("/auth/register", json={"email": email, "password": "password1"})
+    response = anon_client.post("/auth/register", json={"email": email.upper(), "password": "password2"})
     assert response.status_code == 409
 
 
 def test_wrong_password_rejected(anon_client):
-    anon_client.post("/auth/register", json={"username": "wrongpw", "password": "right-password"})
-    response = anon_client.post("/auth/login", data={"username": "wrongpw", "password": "nope-nope"})
+    email = unique_email("wrongpw")
+    anon_client.post("/auth/register", json={"email": email, "password": "right-password"})
+    response = anon_client.post("/auth/login", data={"username": email, "password": "nope-nope"})
     assert response.status_code == 401
 
 
 def test_unknown_user_rejected(anon_client):
-    response = anon_client.post("/auth/login", data={"username": "ghost", "password": "whatever1"})
+    response = anon_client.post("/auth/login", data={"username": unique_email("ghost"), "password": "whatever1"})
     assert response.status_code == 401
 
 
-def test_weak_registration_input_rejected(anon_client):
-    assert anon_client.post("/auth/register", json={"username": "ok_name", "password": "short"}).status_code == 422
-    assert anon_client.post("/auth/register", json={"username": "a b", "password": "longenough"}).status_code == 422
-    too_long = "x" * 73
-    assert anon_client.post("/auth/register", json={"username": "longpw", "password": too_long}).status_code == 422
+def test_bad_registration_input_rejected(anon_client):
+    def register(email, password):
+        return anon_client.post("/auth/register", json={"email": email, "password": password}).status_code
+
+    assert register(unique_email("ok"), "short") == 422
+    assert register("not-an-email", "longenough") == 422
+    assert register("two@@example.com", "longenough") == 422
+    assert register(unique_email("longpw"), "x" * 73) == 422
 
 
 def test_protected_routes_require_login(anon_client):

@@ -1,5 +1,6 @@
 # Ordinary (non-secret) settings, passed to the API as environment
-# variables. Secrets (API keys, JWT_SECRET) live in the askive-secrets
+# variables. Secrets (API keys, JWT_SECRET, the Postgres password and
+# DATABASE_URL, which contains it) live in the askive-secrets
 # Secret instead - see secret.example.yaml.
 apiVersion: v1
 kind: ConfigMap
@@ -11,7 +12,6 @@ data:
   CHROMA_HOST: chroma
   CHROMA_PORT: "8000"
   REDIS_URL: redis://redis:6379/0
-  DATABASE_PATH: /app/data/askive.db
   EMBEDDING_MODEL: voyage-3
   CACHE_TTL_SECONDS: "3600"
   JWT_EXPIRE_MINUTES: "1440"

@@ -11,6 +11,7 @@ Two health endpoints, because Kubernetes asks two different questions:
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.db import connect
 from app.services import cache, retrieval
@@ -28,7 +29,7 @@ def _check_cache():
 
 def _check_database():
     with connect() as conn:
-        conn.execute("SELECT 1")
+        conn.execute(text("SELECT 1"))
 
 
 CHECKS = {"chroma": _check_chroma, "cache": _check_cache, "database": _check_database}

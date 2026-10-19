@@ -1,18 +1,6 @@
 # The Askive API (FastAPI), built from the repo's Dockerfile.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: api-data
-  namespace: askive
-spec:
-  # Holds the SQLite user database. ReadWriteOnce still lets several API pods
-  # share it on minikube's single node; a multi-node cluster would need a real
-  # database server (e.g. Postgres) instead of SQLite.
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 1Gi
----
+# Stateless: users live in Postgres, chunks in ChromaDB, cache in Redis, so
+# any number of API pods can run on any node, and none needs a disk.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,7 +23,6 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
-        fsGroup: 1000          # makes the mounted volume writable by that user
       containers:
         - name: api
           image: askive-api:latest
@@ -48,9 +35,6 @@ spec:
                 name: askive-config
             - secretRef:
                 name: askive-secrets
-          volumeMounts:
-            - name: data
-              mountPath: /app/data
           # Requests = what the scheduler reserves; limits = the hard ceiling.
           # The HorizontalPodAutoscaler measures CPU against the request.
           resources:
@@ -69,17 +53,13 @@ spec:
             httpGet: { path: /health/live, port: 8000 }
             periodSeconds: 10
             failureThreshold: 3
-          # Readiness: can it serve (ChromaDB, Redis, SQLite reachable)? Failing
+          # Readiness: can it serve (ChromaDB, Redis, Postgres reachable)? Failing
           # only takes the pod out of the Service until it recovers - restarting
           # the API wouldn't fix a Redis outage.
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             periodSeconds: 10
             failureThreshold: 3
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: api-data
 ---
 apiVersion: v1
 kind: Service

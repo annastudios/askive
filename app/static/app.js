@@ -21,7 +21,7 @@ const sendBtn = document.getElementById("send-btn");
 const authScreenEl = document.getElementById("auth-screen");
 const authForm = document.getElementById("auth-form");
 const authTitle = document.getElementById("auth-title");
-const authUsername = document.getElementById("auth-username");
+const authEmail = document.getElementById("auth-email");
 const authPassword = document.getElementById("auth-password");
 const authError = document.getElementById("auth-error");
 const authSubmit = document.getElementById("auth-submit");
@@ -118,7 +118,7 @@ authSwitchBtn.addEventListener("click", () => {
 
 authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const username = authUsername.value.trim();
+  const email = authEmail.value.trim().toLowerCase();
   const password = authPassword.value;
   authError.textContent = "";
   authSubmit.disabled = true;
@@ -128,14 +128,15 @@ authForm.addEventListener("submit", async (e) => {
       const res = await fetch("/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
       if (!res.ok) throw new Error(await errorMessage(res));
     }
 
     const res = await fetch("/auth/login", {
       method: "POST",
-      body: new URLSearchParams({ username, password }),
+      // OAuth2 calls this field "username"; Askive puts the email in it.
+      body: new URLSearchParams({ username: email, password }),
     });
     if (!res.ok) throw new Error(await errorMessage(res));
     const { access_token } = await res.json();
@@ -155,7 +156,7 @@ function showAuthScreen(message = "") {
   appShellEl.hidden = true;
   authScreenEl.hidden = false;
   authError.textContent = message;
-  authUsername.focus();
+  authEmail.focus();
 }
 
 function signOut(message = "") {
@@ -179,7 +180,7 @@ async function enterApp() {
   const res = await apiFetch("/auth/me");
   if (!res.ok) throw new Error(await errorMessage(res));
   currentUser = await res.json();
-  userChipEl.textContent = currentUser.username;
+  userChipEl.textContent = currentUser.email;
 
   authScreenEl.hidden = true;
   appShellEl.hidden = false;

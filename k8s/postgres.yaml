@@ -1,0 +1,78 @@
+# Postgres: users and who owns which document.
+#
+# A StatefulSet rather than a Deployment: it's the Kubernetes object meant
+# for databases. Its pod gets a stable name (postgres-0) and its own disk
+# from volumeClaimTemplates, which stays bound to that pod across restarts
+# and rescheduling.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: askive
+spec:
+  # "Headless" (no virtual IP): the DNS name points straight at the pod,
+  # which is what a StatefulSet's stable identity is built on.
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: askive
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: askive
+            - name: POSTGRES_DB
+              value: askive
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: askive-secrets
+                  key: POSTGRES_PASSWORD
+            # A subfolder, because a fresh volume's root may not be empty
+            # (e.g. lost+found), which Postgres refuses to initialise into.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "askive", "-d", "askive"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "askive", "-d", "askive"]
+            periodSeconds: 15
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi

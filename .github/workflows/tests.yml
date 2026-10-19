@@ -8,6 +8,31 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The same suite runs twice: on SQLite (local dev) and on Postgres
+    # (docker-compose / Kubernetes).
+    strategy:
+      matrix:
+        database: [sqlite, postgres]
+    name: test (${{ matrix.database }})
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: askive
+          POSTGRES_PASSWORD: askive
+          POSTGRES_DB: askive
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U askive"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://askive:askive@localhost:5432/askive' || '' }}
+
     steps:
       - uses: actions/checkout@v4
 

@@ -1,9 +1,11 @@
 # Runs Askive with its dependencies:
-#   api     - the FastAPI app (built from ./Dockerfile), on http://localhost:8000
-#   chroma  - ChromaDB server holding chunks and embeddings
-#   redis   - answer/embedding cache and chat memory
+#   api       - the FastAPI app (built from ./Dockerfile), on http://localhost:8000
+#   postgres  - users and who owns which document
+#   chroma    - ChromaDB server holding chunks and embeddings
+#   redis     - answer/embedding cache and chat memory
 # Data lives in named volumes, so it survives `docker compose down` and
-# rebuilds. Only `docker compose down -v` deletes it.
+# rebuilds. Only `docker compose down -v` deletes it. The api container
+# itself keeps no data.
 
 services:
   api:
@@ -18,14 +20,31 @@ services:
       CHROMA_HOST: chroma
       CHROMA_PORT: "8000"
       REDIS_URL: redis://redis:6379/0
-      DATABASE_PATH: /app/data/askive.db
-    volumes:
-      - api-data:/app/data   # SQLite user database
+      DATABASE_URL: postgresql+psycopg://askive:${POSTGRES_PASSWORD:-askive-local-dev}@postgres:5432/askive
     depends_on:
+      postgres:
+        condition: service_healthy
       chroma:
         condition: service_started
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: askive
+      POSTGRES_DB: askive
+      # Set POSTGRES_PASSWORD in .env to override. The default is only for
+      # local use: this port is not published outside Docker's network.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-askive-local-dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "askive", "-d", "askive"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   chroma:
@@ -48,6 +67,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  api-data:
+  postgres-data:
   chroma-data:
   redis-data:

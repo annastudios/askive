@@ -18,6 +18,8 @@ os.environ["VOYAGE_API_KEY"] = "test-key"
 _tmp = tempfile.mkdtemp(prefix="askive-test-")
 os.environ["CHROMA_DB_PATH"] = os.path.join(_tmp, "chroma")
 os.environ["DATABASE_PATH"] = os.path.join(_tmp, "askive.db")
+# Tests use that SQLite file unless DATABASE_URL points at a Postgres
+# (CI runs the suite against both).
 TEST_JWT_SECRET = "test-secret-that-is-at-least-32-bytes-long"
 os.environ["JWT_SECRET"] = TEST_JWT_SECRET
 
@@ -89,12 +91,17 @@ def fresh_cache(monkeypatch):
     return store
 
 
-def sign_up(client: TestClient, username: str | None = None, password: str = "correct-horse") -> dict:
+def unique_email(prefix: str = "user") -> str:
+    """Unique per call, so tests never collide - even against a shared Postgres."""
+    return f"{prefix}.{uuid.uuid4().hex[:10]}@example.com".lower()
+
+
+def sign_up(client: TestClient, email: str | None = None, password: str = "correct-horse") -> dict:
     """Registers a fresh user, logs in, and puts the token on the client.
     Returns the user."""
-    username = username or f"user_{uuid.uuid4().hex[:8]}"
-    user = client.post("/auth/register", json={"username": username, "password": password}).json()
-    token = client.post("/auth/login", data={"username": username, "password": password}).json()
+    email = email or unique_email()
+    user = client.post("/auth/register", json={"email": email, "password": password}).json()
+    token = client.post("/auth/login", data={"username": email, "password": password}).json()
     client.headers["Authorization"] = f"Bearer {token['access_token']}"
     return user
 
