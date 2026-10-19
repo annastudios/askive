@@ -1,0 +1,23 @@
+# Stretch goal: add API pods when CPU is busy, remove them when it's quiet.
+# Needs metrics-server (`minikube addons enable metrics-server`) to read CPU.
+# Works because nothing request-specific lives inside one pod: cache and chat
+# memory are in Redis, chunks in ChromaDB, users in the shared SQLite volume.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: askive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 1
+  maxReplicas: 3          # kept small: minikube only has 2.5 GB here
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70   # % of each pod's CPU request (200m)

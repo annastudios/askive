@@ -1,0 +1,68 @@
+# ChromaDB server: document chunks and their embeddings.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chroma-data
+  namespace: askive
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chroma
+  namespace: askive
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: chroma
+  template:
+    metadata:
+      labels:
+        app: chroma
+    spec:
+      # Don't inject legacy service-link env vars (e.g. CHROMA_PORT=tcp://...):
+      # ChromaDB reads every CHROMA_* variable as its own config and crashes on it.
+      # Pods find each other by DNS name instead (chroma, redis).
+      enableServiceLinks: false
+      containers:
+        - name: chroma
+          image: chromadb/chroma:1.5.9   # must match chromadb in requirements.txt
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          # "Is the port accepting connections" needs no tools inside the image.
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            periodSeconds: 15
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: chroma-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chroma
+  namespace: askive
+spec:
+  selector:
+    app: chroma
+  ports:
+    - port: 8000

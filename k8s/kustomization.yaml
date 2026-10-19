@@ -1,0 +1,9 @@
+# `kubectl apply -k k8s/` applies everything listed here, in order.
+# The Secret is created separately from .env (see secret.example.yaml),
+# and hpa.yaml is applied on its own once metrics-server is enabled.
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - redis.yaml
+  - chroma.yaml
+  - api.yaml
