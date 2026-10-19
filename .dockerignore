@@ -1,0 +1,13 @@
+# Secrets must never end up in the image.
+.env
+
+venv/
+data/
+tests/
+.git/
+.github/
+.claude/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.md

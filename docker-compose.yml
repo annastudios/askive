@@ -1,0 +1,53 @@
+# Runs Askive with its dependencies:
+#   api     - the FastAPI app (built from ./Dockerfile), on http://localhost:8000
+#   chroma  - ChromaDB server holding chunks and embeddings
+#   redis   - answer/embedding cache and chat memory
+# Data lives in named volumes, so it survives `docker compose down` and
+# rebuilds. Only `docker compose down -v` deletes it.
+
+services:
+  api:
+    build: .
+    image: askive-api:latest
+    ports:
+      - "8000:8000"
+    # API keys and JWT_SECRET come from your .env file at runtime.
+    env_file: .env
+    # These override .env, pointing the app at the other containers.
+    environment:
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_PATH: /app/data/askive.db
+    volumes:
+      - api-data:/app/data   # SQLite user database
+    depends_on:
+      chroma:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:1.5.9   # must match the chromadb version in requirements.txt
+    volumes:
+      - chroma-data:/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.2-alpine
+    # Append-only file: cached data and chat memory survive a Redis restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  api-data:
+  chroma-data:
+  redis-data:

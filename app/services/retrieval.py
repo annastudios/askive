@@ -18,10 +18,26 @@ from collections import Counter
 
 import chromadb
 
-from app.config import CHROMA_DB_PATH
+from app.config import CHROMA_DB_PATH, CHROMA_HOST, CHROMA_PORT
 
-client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-collection = client.get_or_create_collection("askive_documents")
+_collection = None
+
+
+def get_collection():
+    """Connects on first use rather than at import, so the API can start
+    before the ChromaDB server is up; a failed attempt is retried on the
+    next call.
+
+    With CHROMA_HOST set (docker-compose, Kubernetes) ChromaDB runs as its
+    own server; otherwise it's embedded in this process, storing files on disk."""
+    global _collection
+    if _collection is None:
+        if CHROMA_HOST:
+            client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+        else:
+            client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+        _collection = client.get_or_create_collection("askive_documents")
+    return _collection
 
 # RRF constant from the original paper; dampens how much the very top
 # ranks dominate, so agreement between both searches matters more.
@@ -100,8 +116,8 @@ def _get_bm25_index() -> BM25Index:
     of chunks in ChromaDB changes, which also picks up uploads made by
     other API replicas sharing the same ChromaDB."""
     global _bm25_index
-    if _bm25_index is None or len(_bm25_index) != collection.count():
-        everything = collection.get(include=["documents", "metadatas"])
+    if _bm25_index is None or len(_bm25_index) != get_collection().count():
+        everything = get_collection().get(include=["documents", "metadatas"])
         _bm25_index = BM25Index(everything["ids"], everything["documents"], everything["metadatas"])
     return _bm25_index
 
@@ -119,7 +135,7 @@ def store_chunks(user_id: str, document_id: str, chunks: list[str], embeddings: 
         return
     ids = [f"{document_id}-{i}" for i in range(len(chunks))]
     metadatas = [{"document_id": document_id, "user_id": user_id} for _ in chunks]
-    collection.add(ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas)
+    get_collection().add(ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas)
 
 
 def semantic_search(
@@ -128,7 +144,7 @@ def semantic_search(
     where = {"user_id": user_id}
     if document_ids:
         where = {"$and": [where, {"document_id": {"$in": document_ids}}]}
-    results = collection.query(query_embeddings=[query_embedding], n_results=top_k, where=where)
+    results = get_collection().query(query_embeddings=[query_embedding], n_results=top_k, where=where)
     return results["ids"][0]
 
 
@@ -153,6 +169,6 @@ def search(
     ])[:top_k]
     if not fused:
         return []
-    found = collection.get(ids=fused, include=["documents"])
+    found = get_collection().get(ids=fused, include=["documents"])
     text_by_id = dict(zip(found["ids"], found["documents"]))
     return [text_by_id[chunk_id] for chunk_id in fused]

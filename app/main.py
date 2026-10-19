@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.routes import auth, chat, documents, upload
+from app.routes import auth, chat, documents, health, upload
 from app.services.embeddings import EmbeddingRateLimited
 
 app = FastAPI(title="Askive", description="Chat with your documents")
@@ -26,11 +26,7 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(documents.router, prefix="/documents", tags=["documents"])
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+app.include_router(health.router, prefix="/health", tags=["health"])
 
 
 class RevalidatedStaticFiles(StaticFiles):

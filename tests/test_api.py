@@ -14,10 +14,31 @@ def upload(client, text=DOC, name="policy.txt"):
     return response.json()
 
 
-def test_health(client):
-    response = client.get("/health")
+def test_health(anon_client):
+    response = anon_client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {
+        "status": "ok",
+        "checks": {"chroma": "ok", "cache": "ok", "database": "ok"},
+    }
+
+
+def test_liveness(anon_client):
+    assert anon_client.get("/health/live").json() == {"status": "ok"}
+
+
+def test_health_reports_503_when_a_dependency_is_down(anon_client, fresh_cache, monkeypatch):
+    def redis_down():
+        raise ConnectionError("redis unreachable")
+
+    monkeypatch.setattr(fresh_cache, "ping", redis_down)
+
+    response = anon_client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["checks"]["cache"] == "error: ConnectionError"
+    # Liveness ignores dependencies, so Kubernetes won't restart the API over a Redis outage.
+    assert anon_client.get("/health/live").status_code == 200
 
 
 def test_frontend_files_are_always_revalidated(anon_client):

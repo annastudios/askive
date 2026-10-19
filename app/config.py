@@ -11,6 +11,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "voyage-3")
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./data/chroma_db")
+CHROMA_HOST = os.getenv("CHROMA_HOST")  # set to use a ChromaDB server instead of CHROMA_DB_PATH
+CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/askive.db")
