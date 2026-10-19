@@ -49,16 +49,21 @@ spec:
             periodSeconds: 2
             failureThreshold: 60
           # Liveness: is the process stuck? Failing restarts the container.
+          # Deliberately lenient (about a minute of silence): under load a busy
+          # pod answered slowly and a strict probe restarted it, dropping every
+          # request in flight and making the overload worse (seen in the load test).
           livenessProbe:
             httpGet: { path: /health/live, port: 8000 }
             periodSeconds: 10
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           # Readiness: can it serve (ChromaDB, Redis, Postgres reachable)? Failing
           # only takes the pod out of the Service until it recovers - restarting
           # the API wouldn't fix a Redis outage.
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             periodSeconds: 10
+            timeoutSeconds: 3        # default 1s is tight for a pod under load
             failureThreshold: 3
 ---
 apiVersion: v1

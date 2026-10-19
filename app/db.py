@@ -59,7 +59,10 @@ def _make_engine():
         return create_engine(DATABASE_URL)
     # pool_pre_ping: check a pooled connection still works before using it,
     # so a Postgres restart doesn't surface as errors on the next requests.
-    return create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=5)
+    # Up to 20 connections per pod: every request checks the login against the
+    # database, and a pod runs up to THREAD_POOL_SIZE requests at once. Three
+    # pods stay well under Postgres' default limit of 100 connections.
+    return create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=10)
 
 
 engine = _make_engine()

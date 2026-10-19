@@ -98,3 +98,39 @@ def test_search_never_crosses_users():
         "secret launch codes", fake_embedding("secret launch codes"), user_id="bob"
     )
     assert results == []
+
+
+def test_keyword_index_only_covers_the_chats_documents():
+    in_chat = store(["Refunds take 30 days.", "Receipts are required."])
+    store(["Penguins live in Antarctica."])  # same user, different chat
+
+    index = retrieval._keyword_index("u1", [in_chat])
+
+    assert len(index) == 2
+
+
+def test_keyword_index_is_built_once_per_chat(monkeypatch):
+    doc_id = store(["Refunds take 30 days."])
+    collection = retrieval.get_collection()
+    fetches = []
+    real_get = collection.get
+
+    def counting_get(*args, **kwargs):
+        if "where" in kwargs:
+            fetches.append(kwargs["where"])
+        return real_get(*args, **kwargs)
+
+    monkeypatch.setattr(collection, "get", counting_get)
+
+    for _ in range(3):
+        retrieval.keyword_search("refunds", top_k=5, user_id="u1", document_ids=[doc_id])
+
+    assert len(fetches) == 1
+
+
+def test_keyword_index_cache_is_bounded(monkeypatch):
+    monkeypatch.setattr(retrieval, "KEYWORD_INDEX_CACHE_SIZE", 2)
+    monkeypatch.setattr(retrieval, "_keyword_indexes", retrieval.OrderedDict())
+    for i in range(5):
+        retrieval._keyword_index("u1", [f"doc-{i}"])
+    assert len(retrieval._keyword_indexes) == 2

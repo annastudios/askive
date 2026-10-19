@@ -1,11 +1,28 @@
+from contextlib import asynccontextmanager
+
+import anyio.to_thread
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.config import THREAD_POOL_SIZE
 from app.routes import auth, chat, documents, health, upload
 from app.services.embeddings import EmbeddingRateLimited
 
-app = FastAPI(title="Askive", description="Chat with your documents")
+
+def configure_thread_pool():
+    """Sets how many plain `def` route calls can run at once (default 40).
+    Must run inside the event loop, hence at startup."""
+    anyio.to_thread.current_default_thread_limiter().total_tokens = THREAD_POOL_SIZE
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    configure_thread_pool()
+    yield
+
+
+app = FastAPI(title="Askive", description="Chat with your documents", lifespan=lifespan)
 
 
 @app.exception_handler(EmbeddingRateLimited)

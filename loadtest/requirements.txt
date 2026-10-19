@@ -1,0 +1,2 @@
+# Only for running the load test; the app itself doesn't need it.
+locust==2.46.7

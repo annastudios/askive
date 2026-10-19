@@ -35,8 +35,12 @@ def _check_database():
 CHECKS = {"chroma": _check_chroma, "cache": _check_cache, "database": _check_database}
 
 
+# async on purpose: FastAPI answers async routes on the event loop itself,
+# while plain `def` routes wait for a worker thread. Under load every worker
+# thread can be busy waiting on Gemini; a `def` liveness check then timed out
+# and Kubernetes restarted a pod that was busy, not dead (found by the load test).
 @router.get("/live")
-def live():
+async def live():
     return {"status": "ok"}
 
 

@@ -140,3 +140,27 @@ def test_chat_returns_clear_429_when_voyage_rate_limited(client, fake_voyage, fa
     assert response.status_code == 429
     assert "rate limit" in response.json()["detail"]
     assert fake_gemini.prompts == []
+
+
+def test_liveness_does_not_need_a_worker_thread():
+    # Under load every worker thread can be busy; an async route still answers.
+    import inspect
+
+    from app.routes import health
+
+    assert inspect.iscoroutinefunction(health.live)
+
+
+def test_startup_sets_the_thread_pool_size():
+    import anyio
+    import anyio.to_thread
+
+    from app.config import THREAD_POOL_SIZE
+    from app.main import configure_thread_pool
+
+    async def configured_size():
+        configure_thread_pool()
+        return anyio.to_thread.current_default_thread_limiter().total_tokens
+
+    assert THREAD_POOL_SIZE == 100
+    assert anyio.run(configured_size) == 100

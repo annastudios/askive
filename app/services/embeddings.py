@@ -17,12 +17,17 @@ import json
 import voyageai
 import voyageai.error
 
-from app.config import VOYAGE_API_KEY, EMBEDDING_MODEL
+from app.config import EMBEDDING_MODEL, FAKE_AI, VOYAGE_API_KEY
 from app.services import cache
 
-# max_retries: on a rate limit, a timeout or a 503 from Voyage, the client
-# waits (about 1s, 2s, 4s, with jitter) and tries again before giving up.
-client = voyageai.Client(api_key=VOYAGE_API_KEY, max_retries=4)
+if FAKE_AI:
+    from app.services.fake_ai import FakeVoyageClient
+
+    client = FakeVoyageClient()
+else:
+    # max_retries: on a rate limit, a timeout or a 503 from Voyage, the client
+    # waits (about 1s, 2s, 4s, with jitter) and tries again before giving up.
+    client = voyageai.Client(api_key=VOYAGE_API_KEY, max_retries=4)
 
 # Embeddings for a given text and model never change, so they can live long.
 EMBEDDING_CACHE_TTL_SECONDS = 7 * 24 * 3600

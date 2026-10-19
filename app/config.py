@@ -31,4 +31,19 @@ if not JWT_SECRET:
     warnings.warn("JWT_SECRET is not set; using a random one for this process.")
     JWT_SECRET = secrets.token_urlsafe(32)
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+# Worker threads for FastAPI's plain `def` routes. Each question holds one for
+# the whole ~4.5s Gemini call, mostly just waiting, so the default of 40 capped
+# a pod at ~40 questions in flight (found by the load test). Waiting threads
+# are cheap; making the AI calls fully async would remove the limit entirely.
+THREAD_POOL_SIZE = int(os.getenv("THREAD_POOL_SIZE", "100"))
+
+# Load testing only: replaces Voyage and Gemini with timed stand-ins (see fake_ai.py).
+FAKE_AI = os.getenv("FAKE_AI") == "1"
+
+if FAKE_AI:
+    from app.services.fake_ai import FakeGeminiClient
+
+    warnings.warn("FAKE_AI=1: Voyage and Gemini are replaced with fakes. Never use this for real users.")
+    gemini_client = FakeGeminiClient()
+else:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)

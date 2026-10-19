@@ -14,7 +14,8 @@ Handles storing and searching chunks in ChromaDB.
 
 import math
 import re
-from collections import Counter
+import threading
+from collections import Counter, OrderedDict
 
 import chromadb
 
@@ -57,7 +58,7 @@ def tokenize(text: str) -> list[str]:
 
 
 class BM25Index:
-    """Classic Okapi BM25 over every chunk in the collection."""
+    """Classic Okapi BM25 over a set of chunks (one chat's documents)."""
 
     K1 = 1.5
     B = 0.75
@@ -108,18 +109,43 @@ class BM25Index:
         return [chunk_id for _, chunk_id in scored[:top_k]]
 
 
-_bm25_index: BM25Index | None = None
+# Keyword indexes, one per (user, set of documents) - i.e. per chat. Uploaded
+# documents never change, so an index can be reused for as long as it stays in
+# this small least-recently-used cache.
+#
+# This replaced a single index over every chunk of every user, rebuilt whenever
+# the total chunk count changed. Under load that meant a 9-second rebuild after
+# every upload, run by many requests at once - the load test found it
+# saturating the CPU until Kubernetes restarted the pod.
+KEYWORD_INDEX_CACHE_SIZE = 256
+_keyword_indexes: "OrderedDict[tuple, BM25Index]" = OrderedDict()
+_keyword_indexes_lock = threading.Lock()
 
 
-def _get_bm25_index() -> BM25Index:
-    """The keyword index lives in memory. It's rebuilt whenever the number
-    of chunks in ChromaDB changes, which also picks up uploads made by
-    other API replicas sharing the same ChromaDB."""
-    global _bm25_index
-    if _bm25_index is None or len(_bm25_index) != get_collection().count():
-        everything = get_collection().get(include=["documents", "metadatas"])
-        _bm25_index = BM25Index(everything["ids"], everything["documents"], everything["metadatas"])
-    return _bm25_index
+def _keyword_index(user_id: str, document_ids: list[str] | None) -> BM25Index:
+    where = {"user_id": user_id}
+    if document_ids:
+        where = {"$and": [where, {"document_id": {"$in": document_ids}}]}
+    # Without a document list the index covers all of a user's documents, which
+    # grows with every upload - so only explicit document sets are cached.
+    key = (user_id, tuple(sorted(document_ids))) if document_ids else None
+
+    if key is not None:
+        with _keyword_indexes_lock:
+            if key in _keyword_indexes:
+                _keyword_indexes.move_to_end(key)
+                return _keyword_indexes[key]
+
+    chunks = get_collection().get(where=where, include=["documents", "metadatas"])
+    index = BM25Index(chunks["ids"], chunks["documents"], chunks["metadatas"])
+
+    if key is not None:
+        with _keyword_indexes_lock:
+            _keyword_indexes[key] = index
+            _keyword_indexes.move_to_end(key)
+            while len(_keyword_indexes) > KEYWORD_INDEX_CACHE_SIZE:
+                _keyword_indexes.popitem(last=False)
+    return index
 
 
 def reciprocal_rank_fusion(ranked_lists: list[list[str]]) -> list[str]:
@@ -151,7 +177,7 @@ def semantic_search(
 def keyword_search(
     query: str, top_k: int, user_id: str, document_ids: list[str] | None = None
 ) -> list[str]:
-    return _get_bm25_index().search(query, top_k, user_id, document_ids)
+    return _keyword_index(user_id, document_ids).search(query, top_k, user_id, document_ids)
 
 
 def search(
