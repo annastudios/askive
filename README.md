@@ -267,16 +267,6 @@ Dockerfile
 docker-compose.yml
 ```
 
-## Roadmap
-
-- [x] v1: semantic chunking, embeddings, vector search, conversation memory
-- [x] v2: tests and CI, hybrid search, accounts, caching, Docker,
-      Kubernetes with autoscaling, Postgres, load testing
-- [ ] Build and publish the Docker image from CI
-- [ ] Fully async calls to the AI services, removing the per-pod thread limit
-- [ ] Store embeddings in Postgres with pgvector, replacing ChromaDB
-- [ ] Email verification and password reset
-
 ## About
 
 Built by Ankita Gaikwad. Version 2 was developed with the help of Claude
