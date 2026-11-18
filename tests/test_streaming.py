@@ -39,7 +39,8 @@ def test_answer_streams_in_pieces_then_is_saved(client, fake_gemini):
     names = [name for name, _ in events]
     assert names[0] == "sources" and names[-1] == "done"
     assert names[1:-1] == ["delta", "delta"]  # the fake writes "Fake " then "answer."
-    assert any("Refunds" in s for s in events[0][1]["sources"])
+    assert any("Refunds" in s["text"] for s in events[0][1]["sources"])
+    assert all(s["document_id"] for s in events[0][1]["sources"])
     assert "".join(data["text"] for name, data in events if name == "delta").strip() == "Fake answer."
 
     done = events[-1][1]
@@ -73,7 +74,8 @@ def test_cached_answer_streams_as_one_piece(client, fake_gemini, monkeypatch):
     _, events = stream(client, chat["id"], "How long do refunds take?")
 
     assert [name for name, _ in events] == ["sources", "delta", "done"]
-    assert events[0][1] == {"sources": ["s1"], "cached": True}
+    # An answer cached before passages carried their document still works.
+    assert events[0][1] == {"sources": [{"document_id": None, "text": "s1"}], "cached": True}
     assert events[-1][1]["cached"] is True
     assert fake_gemini.prompts == []
 
@@ -102,7 +104,7 @@ def test_sources_are_ready_before_gemini_is_called(client, fake_gemini):
 
     answer = qa.start_answer_stream(user_id, "How long do refunds take?", [document["id"]], history=[])
 
-    assert any("Refunds" in s for s in answer.sources)
+    assert any("Refunds" in s["text"] for s in answer.sources)
     assert fake_gemini.prompts == []
     assert "".join(answer.pieces).strip() == "Fake answer."
     assert len(fake_gemini.prompts) == 1

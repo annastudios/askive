@@ -1,3 +1,13 @@
+# Stage 1: build the React frontend. Only its output (static files) is
+# copied into the final image - Node and node_modules never reach it.
+FROM node:26-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: the API, which also serves the built frontend.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -6,7 +16,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_ROOT_USER_ACTION=ignore \
     DATABASE_PATH=/app/data/askive.db \
-    CHROMA_DB_PATH=/app/data/chroma_db
+    CHROMA_DB_PATH=/app/data/chroma_db \
+    FRONTEND_DIST=/app/frontend/dist
 # (Those paths are only fallbacks: compose and Kubernetes set DATABASE_URL
 # and CHROMA_HOST, so the container itself stores nothing.)
 
@@ -18,6 +29,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+COPY --from=frontend /frontend/dist ./frontend/dist
 
 # Run as an unprivileged user; it owns only the data directory.
 RUN useradd --create-home --uid 1000 askive \

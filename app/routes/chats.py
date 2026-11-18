@@ -69,7 +69,7 @@ def upload_to_chat(chat_id: str, file: UploadFile, user: dict = Depends(get_curr
     # Check ownership before the (slow) upload work, not after.
     if chats.get_chat(user["id"], chat_id) is None:
         raise NOT_FOUND
-    document = ingest(user["id"], file.filename, file.file.read())
+    document = ingest(user["id"], file.filename, file.file.read(), file.content_type)
     chats.attach_document(user["id"], chat_id, document["id"])
     return document
 

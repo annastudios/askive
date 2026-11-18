@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, insert, select, update
 
 from app.db import chat_documents, chats, connect, documents, messages
+from app.services.qa import normalize_sources
 
 DEFAULT_TITLE = "New chat"
 TITLE_LENGTH = 60
@@ -67,7 +68,7 @@ def get_chat(user_id: str, chat_id: str) -> dict | None:
         **_summary(row),
         "documents": [dict(d) for d in docs],
         "messages": [
-            {"id": m.id, "role": m.role, "content": m.content, "sources": json.loads(m.sources), "created_at": m.created_at}
+            {"id": m.id, "role": m.role, "content": m.content, "sources": normalize_sources(json.loads(m.sources)), "created_at": m.created_at}
             for m in msgs
         ],
     }
@@ -130,7 +131,7 @@ def recent_turns(chat_id: str, limit: int = 3) -> list[dict]:
     return turns
 
 
-def add_exchange(chat_id: str, question: str, answer: str, sources: list[str]) -> dict:
+def add_exchange(chat_id: str, question: str, answer: str, sources: list[dict]) -> dict:
     """Stores a question and its answer, names an untitled chat after its first
     question, and returns the stored answer message."""
     with connect() as conn:

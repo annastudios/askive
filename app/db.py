@@ -20,6 +20,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Table,
@@ -50,6 +51,18 @@ documents = Table(
     Column("filename", String(255), nullable=False),
     Column("chunks", Integer, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# The original uploaded file, kept so it can be previewed. Stored in the
+# database (bytea in Postgres) rather than on the API's disk, so the API
+# stays stateless and every replica can serve it.
+document_files = Table(
+    "document_files",
+    metadata,
+    Column("document_id", String(36), ForeignKey("documents.id"), primary_key=True),
+    Column("content_type", String(100), nullable=False),
+    Column("size", Integer, nullable=False),
+    Column("data", LargeBinary, nullable=False),
 )
 
 # A conversation. Questions in a chat search only the documents attached to it.

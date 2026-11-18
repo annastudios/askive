@@ -43,7 +43,7 @@ def get(user_id: str, question: str, document_ids: list[str], transcript: str) -
     return json.loads(cached) if cached else None
 
 
-def put(user_id: str, question: str, document_ids: list[str], transcript: str, answer: str, sources: list[str]):
+def put(user_id: str, question: str, document_ids: list[str], transcript: str, answer: str, sources: list[dict]):
     cache.store.set(
         _key(user_id, question, document_ids, transcript),
         json.dumps({"answer": answer, "sources": sources}),

@@ -58,7 +58,9 @@ def test_asking_stores_both_messages_and_names_the_chat(client, fake_gemini):
 
     assert reply["message"]["role"] == "assistant"
     assert reply["message"]["content"] == "Fake answer."
-    assert any("Refunds" in s for s in reply["message"]["sources"])
+    assert any("Refunds" in s["text"] for s in reply["message"]["sources"])
+    document_id = client.get(f"/chats/{chat['id']}").json()["documents"][0]["id"]
+    assert all(s["document_id"] == document_id for s in reply["message"]["sources"])
 
     detail = client.get(f"/chats/{chat['id']}").json()
     assert [(m["role"], m["content"]) for m in detail["messages"]] == [
@@ -113,7 +115,7 @@ def test_only_the_chats_own_documents_are_searched(client, fake_gemini):
 
     reply = ask(client, refunds["id"], "Where do penguins live?")
 
-    assert all("Penguins" not in s for s in reply["message"]["sources"])
+    assert all("Penguins" not in s["text"] for s in reply["message"]["sources"])
 
 
 def test_other_users_get_404_for_every_route(client, fake_gemini):

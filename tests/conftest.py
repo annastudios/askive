@@ -18,6 +18,14 @@ os.environ["VOYAGE_API_KEY"] = "test-key"
 _tmp = tempfile.mkdtemp(prefix="askive-test-")
 os.environ["CHROMA_DB_PATH"] = os.path.join(_tmp, "chroma")
 os.environ["DATABASE_PATH"] = os.path.join(_tmp, "askive.db")
+# A stand-in for the built React app, so tests don't need `npm run build`.
+_dist = os.path.join(_tmp, "dist")
+os.makedirs(os.path.join(_dist, "assets"))
+with open(os.path.join(_dist, "index.html"), "w") as f:
+    f.write("<!doctype html><div id=root></div>")
+with open(os.path.join(_dist, "assets", "index-abc123.js"), "w") as f:
+    f.write("console.log('app')")
+os.environ["FRONTEND_DIST"] = _dist
 # Tests use that SQLite file unless DATABASE_URL points at a Postgres
 # (CI runs the suite against both).
 TEST_JWT_SECRET = "test-secret-that-is-at-least-32-bytes-long"

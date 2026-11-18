@@ -186,8 +186,10 @@ def search(
     user_id: str,
     top_k: int = 5,
     document_ids: list[str] | None = None,
-) -> list[str]:
-    """Only ever returns chunks owned by user_id."""
+) -> list[dict]:
+    """The best passages as [{"document_id", "text"}], best first. Only ever
+    returns chunks owned by user_id. The document id lets the UI open the
+    right document when a passage is clicked."""
     candidates = top_k * CANDIDATE_MULTIPLIER
     fused = reciprocal_rank_fusion([
         semantic_search(query_embedding, candidates, user_id, document_ids),
@@ -195,6 +197,9 @@ def search(
     ])[:top_k]
     if not fused:
         return []
-    found = get_collection().get(ids=fused, include=["documents"])
-    text_by_id = dict(zip(found["ids"], found["documents"]))
-    return [text_by_id[chunk_id] for chunk_id in fused]
+    found = get_collection().get(ids=fused, include=["documents", "metadatas"])
+    by_id = {
+        chunk_id: {"document_id": meta.get("document_id"), "text": text}
+        for chunk_id, text, meta in zip(found["ids"], found["documents"], found["metadatas"])
+    }
+    return [by_id[chunk_id] for chunk_id in fused]

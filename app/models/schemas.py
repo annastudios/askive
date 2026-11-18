@@ -79,11 +79,16 @@ class ChatDocument(BaseModel):
     chunks: int
 
 
+class Source(BaseModel):
+    document_id: str | None = None  # None for answers saved before this was recorded
+    text: str
+
+
 class Message(BaseModel):
     id: int
     role: str
     content: str
-    sources: list[str] = []
+    sources: list[Source] = []
     created_at: datetime
 
 

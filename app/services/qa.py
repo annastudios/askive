@@ -27,15 +27,25 @@ def transcript_of(history: list[dict]) -> str:
     return "\n".join(f"Q: {t['question']}\nA: {t['answer']}" for t in history[-HISTORY_TURNS:])
 
 
-def build_prompt(question: str, chunks: list[str], transcript: str) -> str:
-    context = "\n\n".join(chunks)
+def normalize_sources(sources: list) -> list[dict]:
+    """Sources are {"document_id", "text"}. Answers saved (or cached) before
+    passages carried their document were plain strings; read those too."""
+    return [s if isinstance(s, dict) else {"document_id": None, "text": s} for s in sources]
+
+
+def build_prompt(question: str, chunks: list, transcript: str) -> str:
+    # Passages are numbered in the same order as the `sources` returned with the
+    # answer, so a citation like [2] points at sources[1] in the UI.
+    texts = [c["text"] if isinstance(c, dict) else c for c in chunks]
+    passages = "\n\n".join(f"[{i}] {text}" for i, text in enumerate(texts, start=1))
     history_block = f"Recent conversation:\n{transcript}\n\n" if transcript else ""
     return (
-        "Answer the question using only the context below. If the context "
-        "doesn't contain the answer, say you don't know. Use the recent "
-        "conversation, if any, to understand what the question refers to.\n\n"
+        "Answer the question using only the numbered passages below. After each "
+        "statement, cite the passage it came from in square brackets, like [2]. "
+        "If the passages don't contain the answer, say you don't know. Use the "
+        "recent conversation, if any, to understand what the question refers to.\n\n"
         f"{history_block}"
-        f"Context:\n{context}\n\n"
+        f"Passages:\n{passages}\n\n"
         f"Question: {question}"
     )
 
@@ -61,6 +71,7 @@ def _prepare(user_id: str, question: str, document_ids: list[str], history: list
     transcript = transcript_of(history)
     cached = answer_cache.get(user_id, question, document_ids, transcript)
     if cached:
+        cached = {**cached, "sources": normalize_sources(cached["sources"])}
         return transcript, cached, cached["sources"]
 
     # A follow-up like "what about digital products?" is searched together with
@@ -99,7 +110,7 @@ class StreamFailed(Exception):
 
 @dataclass
 class AnswerStream:
-    sources: list[str]
+    sources: list[dict]           # [{"document_id", "text"}]
     pieces: Iterator[str]          # the answer, piece by piece as it is written
     cached: bool
     _on_complete: Callable[[str], None] | None = None
