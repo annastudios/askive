@@ -3,6 +3,7 @@ import { CloudUpload, FileText, LoaderCircle, Menu, Paperclip, TriangleAlert } f
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { useNavigate, useOutletContext, useParams } from 'react-router'
 
+import type { ShellContext } from '../App'
 import { Answer } from '../components/Answer'
 import { Composer } from '../components/Composer'
 import { DocumentPreview, type PreviewTarget } from '../components/DocumentPreview'
@@ -28,7 +29,7 @@ export function ChatPage() {
   const { chatId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { openSidebar } = useOutletContext<{ openSidebar: () => void }>()
+  const { openSidebar, setSidebarCollapsed } = useOutletContext<ShellContext>()
   const fileInput = useRef<HTMLInputElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const abort = useRef<AbortController | null>(null)
@@ -39,6 +40,16 @@ export function ChatPage() {
   const [dragging, setDragging] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const [preview, setPreview] = useState<PreviewTarget | null>(null)
+  const previewOpen = preview !== null
+
+  // Chat + document side by side is plenty: fold the sidebar into its icon
+  // rail while a preview is open, and bring it back when it closes (or when
+  // leaving this chat).
+  useEffect(() => {
+    if (!previewOpen) return
+    setSidebarCollapsed(true)
+    return () => setSidebarCollapsed(false)
+  }, [previewOpen, setSidebarCollapsed])
 
   const { data: chat, isLoading, error } = useQuery({
     queryKey: ['chat', chatId],

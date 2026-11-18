@@ -21,12 +21,19 @@ export default function App() {
   )
 }
 
+/** What the layout offers the chat pages inside it. */
+export type ShellContext = {
+  openSidebar: () => void
+  setSidebarCollapsed: (collapsed: boolean) => void
+}
+
 /** Sign-in gate + sidebar layout around every chat page. */
 function Shell() {
   const { user, loading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Ctrl+K (Cmd+K on Mac) starts a new chat from anywhere.
   useEffect(() => {
@@ -55,7 +62,7 @@ function Shell() {
   return (
     <div className="flex h-full overflow-hidden">
       <div className="hidden md:block">
-        <Sidebar />
+        <Sidebar collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((c) => !c)} />
       </div>
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 flex md:hidden">
@@ -64,7 +71,7 @@ function Shell() {
         </div>
       )}
       <main className="min-w-0 flex-1 bg-canvas">
-        <Outlet context={{ openSidebar: () => setSidebarOpen(true) }} />
+        <Outlet context={{ openSidebar: () => setSidebarOpen(true), setSidebarCollapsed } satisfies ShellContext} />
       </main>
     </div>
   )

@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ellipsis, LogOut, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Ellipsis, LogOut, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useNavigate, useParams } from 'react-router'
 
 import { useAuth } from '../auth'
 import { chats as chatsApi } from '../lib/api'
 import type { ChatSummary } from '../lib/types'
-import { Logo } from './Logo'
+import { Logo, LogoMark } from './Logo'
 
 const GROUPS = ['Today', 'Yesterday', 'Previous 7 days', 'Older'] as const
 
@@ -20,7 +20,14 @@ function groupOf(iso: string): (typeof GROUPS)[number] {
   return 'Older'
 }
 
-export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+type SidebarProps = {
+  onNavigate?: () => void
+  /** Wide screens only: shrink to a slim icon rail (e.g. while a document preview is open). */
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
+}
+
+export function Sidebar({ onNavigate, collapsed, onToggleCollapsed }: SidebarProps) {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -37,10 +44,37 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.()
   }
 
+  if (collapsed) {
+    return (
+      <aside className="flex h-full w-16 flex-col items-center gap-2 border-r border-line bg-sidebar py-4">
+        <LogoMark />
+        <button onClick={onToggleCollapsed} aria-label="Expand sidebar" title="Expand sidebar" className="mt-2 rounded-lg p-2 text-muted transition hover:bg-raised hover:text-ink">
+          <PanelLeftOpen className="size-4.5" />
+        </button>
+        <button onClick={newChat} aria-label="New chat" title="New chat (Ctrl K)" className="rounded-lg p-2 text-accent-ink transition hover:bg-tint">
+          <Plus className="size-4.5" />
+        </button>
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <div className="flex size-8 items-center justify-center rounded-full bg-tint text-xs font-semibold text-accent-ink uppercase" title={user?.email}>
+            {user?.email[0]}
+          </div>
+          <button onClick={signOut} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-muted transition hover:bg-raised hover:text-ink">
+            <LogOut className="size-4" />
+          </button>
+        </div>
+      </aside>
+    )
+  }
+
   return (
     <aside className="flex h-full w-72 flex-col border-r border-line bg-sidebar">
       <div className="flex items-center justify-between px-4 pt-4 pb-3">
         <Logo />
+        {onToggleCollapsed && (
+          <button onClick={onToggleCollapsed} aria-label="Collapse sidebar" title="Collapse sidebar" className="rounded-lg p-1.5 text-faint transition hover:bg-raised hover:text-ink">
+            <PanelLeftClose className="size-4.5" />
+          </button>
+        )}
       </div>
 
       <div className="space-y-2 px-3">
