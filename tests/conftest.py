@@ -27,8 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.routes import chat
-from app.services import cache, embeddings
+from app.services import cache, embeddings, qa
 
 DIMENSIONS = 64
 
@@ -79,7 +78,7 @@ def fake_voyage(monkeypatch):
 @pytest.fixture
 def fake_gemini(monkeypatch):
     interactions = FakeInteractions()
-    monkeypatch.setattr(chat, "gemini_client", SimpleNamespace(interactions=interactions))
+    monkeypatch.setattr(qa, "gemini_client", SimpleNamespace(interactions=interactions))
     return interactions
 
 

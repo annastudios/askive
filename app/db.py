@@ -23,6 +23,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     create_engine,
     func,
 )
@@ -48,6 +49,37 @@ documents = Table(
     Column("user_id", String(36), ForeignKey("users.id"), nullable=False, index=True),
     Column("filename", String(255), nullable=False),
     Column("chunks", Integer, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# A conversation. Questions in a chat search only the documents attached to it.
+chats = Table(
+    "chats",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id"), nullable=False, index=True),
+    Column("title", String(200), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+chat_documents = Table(
+    "chat_documents",
+    metadata,
+    Column("chat_id", String(36), ForeignKey("chats.id", ondelete="CASCADE"), primary_key=True),
+    Column("document_id", String(36), ForeignKey("documents.id"), primary_key=True),
+)
+
+messages = Table(
+    "messages",
+    metadata,
+    # An increasing number, so messages always read back in the order written.
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("chat_id", String(36), ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True),
+    Column("role", String(16), nullable=False),  # "user" or "assistant"
+    Column("content", Text, nullable=False),
+    # The retrieved passages an answer was based on, as a JSON list of strings.
+    Column("sources", Text, nullable=False, server_default="[]"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 

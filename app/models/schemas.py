@@ -53,3 +53,49 @@ class DocumentInfo(BaseModel):
     filename: str
     chunks: int
     created_at: datetime
+
+
+# --- Chats stored on the server ---
+
+
+class ChatCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+
+
+class ChatRename(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+class ChatSummary(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatDocument(BaseModel):
+    id: str
+    filename: str
+    chunks: int
+
+
+class Message(BaseModel):
+    id: int
+    role: str
+    content: str
+    sources: list[str] = []
+    created_at: datetime
+
+
+class ChatDetail(ChatSummary):
+    documents: list[ChatDocument]
+    messages: list[Message]
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+
+
+class AskResponse(BaseModel):
+    message: Message
+    cached: bool = False
