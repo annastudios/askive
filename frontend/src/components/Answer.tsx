@@ -114,7 +114,7 @@ export function Answer({ uid, content, sources, streaming, cached, status, onOpe
         )}
 
         {shown.length > 0 && (
-          <div className={`grid gap-2 ${shown.length > 1 ? '@lg:grid-cols-2' : ''}`}>
+          <div className={`grid items-start gap-2 ${shown.length > 1 ? '@lg:grid-cols-2' : ''}`}>
             {shown.map((n) => {
               const source = sources[n - 1]
               const canOpen = Boolean(source.document_id && onOpenSource)
