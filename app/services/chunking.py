@@ -18,6 +18,14 @@ from app.services.embeddings import embed_texts
 
 SIMILARITY_THRESHOLD = 0.5
 
+# Chunk size limits, in characters (~a short paragraph to ~a long one).
+# Topic shifts alone split too eagerly: a one-page document became a dozen
+# one-sentence chunks, which read badly and give the model little context.
+# So a topic shift only starts a new chunk once the current one is at least
+# MIN long, and a chunk is always cut before it grows past MAX.
+MIN_CHUNK_CHARS = 400
+MAX_CHUNK_CHARS = 1500
+
 
 def _split_sentences(text: str) -> list[str]:
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
@@ -41,15 +49,24 @@ def chunk_text(text: str) -> list[str]:
     embeddings = embed_texts(sentences, input_type="document")
 
     chunks: list[str] = []
-    current_chunk = [sentences[0]]
+    current = [sentences[0]]
+    current_len = len(sentences[0])
 
     for i in range(1, len(sentences)):
-        similarity = _cosine_similarity(embeddings[i - 1], embeddings[i])
-        if similarity < SIMILARITY_THRESHOLD:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = [sentences[i]]
+        sentence = sentences[i]
+        too_big = current_len + 1 + len(sentence) > MAX_CHUNK_CHARS
+        topic_shift = _cosine_similarity(embeddings[i - 1], embeddings[i]) < SIMILARITY_THRESHOLD
+        if too_big or (topic_shift and current_len >= MIN_CHUNK_CHARS):
+            chunks.append(" ".join(current))
+            current, current_len = [sentence], len(sentence)
         else:
-            current_chunk.append(sentences[i])
+            current.append(sentence)
+            current_len += 1 + len(sentence)
 
-    chunks.append(" ".join(current_chunk))
+    last = " ".join(current)
+    # A short leftover reads better as the end of the previous chunk.
+    if chunks and len(last) < MIN_CHUNK_CHARS and len(chunks[-1]) + 1 + len(last) <= MAX_CHUNK_CHARS:
+        chunks[-1] = f"{chunks[-1]} {last}"
+    else:
+        chunks.append(last)
     return chunks

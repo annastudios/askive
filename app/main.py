@@ -1,12 +1,14 @@
+import os
 from contextlib import asynccontextmanager
 
 import anyio.to_thread
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.config import THREAD_POOL_SIZE
-from app.routes import auth, chat, documents, health, upload
+from app.config import FRONTEND_DIST, THREAD_POOL_SIZE
+from app.routes import auth, chat, chats, documents, health, upload
 from app.services.embeddings import EmbeddingRateLimited
 
 
@@ -43,19 +45,44 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(documents.router, prefix="/documents", tags=["documents"])
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(chats.router, prefix="/chats", tags=["chats"])
 app.include_router(health.router, prefix="/health", tags=["health"])
 
 
-class RevalidatedStaticFiles(StaticFiles):
-    """Without a Cache-Control header browsers may reuse a cached app.js
-    without asking, so users keep running old frontend code after a deploy.
-    `no-cache` makes them check every time; unchanged files still come back
-    as a tiny 304 thanks to the ETag StaticFiles already sends."""
+class FrontendFiles(StaticFiles):
+    """Serves the built React app (frontend/dist).
+
+    Caching: Vite puts a content hash in every file under assets/
+    (index-DTJd0T_V.js), so those can be cached forever - a new build gets new
+    names. index.html is re-checked on every visit (a tiny 304 when unchanged),
+    so users never keep running old code after a deploy.
+
+    Routing: the app has its own addresses (/c/<chat id>). Refreshing one asks
+    the server for a file that doesn't exist, so any path that doesn't look
+    like a file gets index.html, and React shows the right page."""
 
     async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache"
+        path = path.replace("\\", "/")  # Starlette uses the OS separator; Windows gives "assets\\x.js"
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as e:
+            looks_like_file = "." in path.rsplit("/", 1)[-1]
+            if e.status_code != 404 or looks_like_file:
+                raise
+            response = await super().get_response("index.html", scope)
+        if path.startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
 
-app.mount("/", RevalidatedStaticFiles(directory="app/static", html=True), name="static")
+if os.path.isdir(FRONTEND_DIST):
+    app.mount("/", FrontendFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+else:
+    @app.get("/", include_in_schema=False)
+    def frontend_not_built():
+        return HTMLResponse(
+            "<p>The React frontend isn't built. Run <code>npm run build</code> in "
+            "<code>frontend/</code>, or use the Vite dev server (<code>npm run dev</code>).</p>"
+        )

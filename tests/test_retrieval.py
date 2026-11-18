@@ -70,7 +70,7 @@ def test_hybrid_search_finds_keyword_hit_semantic_search_missed(monkeypatch):
         "ERR_4521", fake_embedding("ERR_4521"), user_id="u1", top_k=2, document_ids=[doc_id]
     )
 
-    assert "Error ERR_4521 means the toner cartridge is missing." in results
+    assert {"document_id": doc_id, "text": "Error ERR_4521 means the toner cartridge is missing."} in results
 
 
 def test_keyword_index_picks_up_new_uploads():

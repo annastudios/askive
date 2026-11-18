@@ -11,6 +11,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "voyage-3")
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./data/chroma_db")
+# The built React app (npm run build in frontend/). The Docker image sets its own path.
+FRONTEND_DIST = os.getenv("FRONTEND_DIST", "./frontend/dist")
 CHROMA_HOST = os.getenv("CHROMA_HOST")  # set to use a ChromaDB server instead of CHROMA_DB_PATH
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 GEMINI_MODEL = "gemini-3.5-flash-lite"
@@ -22,6 +24,8 @@ DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{DATABASE_PATH}"
 # Unset means an in-process cache: fine for one local server, but not shared between replicas.
 REDIS_URL = os.getenv("REDIS_URL")
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
+# Uploads are stored in the database for previews, so keep them modest.
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "10"))
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
 

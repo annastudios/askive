@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/* Theme: "Midnight violet" (dark only). Components use the semantic colors
+   below (bg-canvas, text-muted, border-line, ...), never raw hex values. */
+:root {
+  color-scheme: dark;
+  --canvas: #07070b;
+  --sidebar: #0c0c13;
+  --panel: #11111a;
+  --raised: #171723;
+  --line: #1e1e2b;
+  --line-strong: #2c2c3e;
+  --ink: #ececf3;
+  --muted: #7c7c93;
+  --faint: #55556a;
+  --accent: #8b7bff;
+  --accent-2: #5b8cff;
+  --accent-ink: #c9c1ff;
+  --tint: #1d1a3d;
+  --danger: #ff6b81;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-sidebar: var(--sidebar);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-ink: var(--accent-ink);
+  --color-tint: var(--tint);
+  --color-danger: var(--danger);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", "Inter", ui-sans-serif, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Thin, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* The blinking cursor shown while an answer is streaming in */
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: -0.2em;
+  background: var(--accent-ink);
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--ink) 50%, var(--muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret::after,
+  .shimmer {
+    animation: none;
+  }
+}
+
+/* Formatted answers (react-markdown output) */
+.answer p {
+  margin: 0 0 0.75em;
+}
+.answer > :last-child {
+  margin-bottom: 0;
+}
+.answer ul,
+.answer ol {
+  margin: 0 0 0.75em;
+  padding-left: 1.3em;
+}
+.answer ul {
+  list-style: disc;
+}
+.answer ol {
+  list-style: decimal;
+}
+.answer li {
+  margin: 0.25em 0;
+}
+.answer strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.answer code {
+  font-size: 0.88em;
+  background: var(--raised);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.answer h1,
+.answer h2,
+.answer h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 1em 0 0.4em;
+}

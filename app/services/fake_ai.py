@@ -37,10 +37,27 @@ class FakeVoyageClient:
         return SimpleNamespace(embeddings=[_vector(t) for t in texts])
 
 
+ANSWER = "(Load-test placeholder answer: FAKE_AI is on. This text streams in word by word, like a real answer.)"
+# A real answer's first words arrive well before the last ones.
+FIRST_WORDS_SECONDS = 0.5
+
+
 class _FakeInteractions:
-    def create(self, model, input):
-        time.sleep(LLM_SECONDS)
-        return SimpleNamespace(output_text="(Load-test placeholder answer: FAKE_AI is on.)")
+    def create(self, model, input, stream=False):
+        if not stream:
+            time.sleep(LLM_SECONDS)
+            return SimpleNamespace(output_text=ANSWER)
+        return self._events()
+
+    def _events(self):
+        words = ANSWER.split(" ")
+        time.sleep(FIRST_WORDS_SECONDS)
+        gap = max(LLM_SECONDS - FIRST_WORDS_SECONDS, 0) / len(words)
+        for i, word in enumerate(words):
+            if i:
+                time.sleep(gap)
+            text = word if i == len(words) - 1 else word + " "
+            yield SimpleNamespace(event_type="step.delta", delta=SimpleNamespace(type="text", text=text))
 
 
 class FakeGeminiClient:

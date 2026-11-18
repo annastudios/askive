@@ -8,7 +8,7 @@ import bcrypt
 from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 
-from app.db import connect, documents, users
+from app.db import connect, document_files, documents, users
 
 
 class EmailTaken(Exception):
@@ -70,3 +70,20 @@ def list_documents(user_id: str) -> list[dict]:
             .order_by(documents.c.created_at, documents.c.id)
         ).mappings().all()
     return [dict(r) for r in rows]
+
+
+def add_document_file(document_id: str, content_type: str, data: bytes):
+    with connect() as conn:
+        conn.execute(insert(document_files).values(document_id=document_id, content_type=content_type, size=len(data), data=data))
+
+
+def get_document_file(user_id: str, document_id: str) -> dict | None:
+    """The original file of one of the user's documents, or None if the document
+    doesn't exist, isn't theirs, or was uploaded before files were kept."""
+    with connect() as conn:
+        row = conn.execute(
+            select(documents.c.filename, document_files.c.content_type, document_files.c.data)
+            .join(document_files, document_files.c.document_id == documents.c.id)
+            .where(documents.c.id == document_id, documents.c.user_id == user_id)
+        ).mappings().first()
+    return dict(row) if row else None

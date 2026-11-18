@@ -41,15 +41,31 @@ def test_health_reports_503_when_a_dependency_is_down(anon_client, fresh_cache, 
     assert anon_client.get("/health/live").status_code == 200
 
 
-def test_frontend_files_are_always_revalidated(anon_client):
-    for path in ["/", "/app.js", "/style.css"]:
-        response = anon_client.get(path)
-        assert response.status_code == 200
-        assert response.headers["Cache-Control"] == "no-cache"
-        assert "etag" in response.headers
+def test_index_html_is_always_revalidated(anon_client):
+    response = anon_client.get("/")
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-cache"
+    etag = response.headers["etag"]
+    assert anon_client.get("/", headers={"If-None-Match": etag}).status_code == 304
 
-    etag = anon_client.get("/app.js").headers["etag"]
-    assert anon_client.get("/app.js", headers={"If-None-Match": etag}).status_code == 304
+
+def test_hashed_assets_are_cached_forever(anon_client):
+    response = anon_client.get("/assets/index-abc123.js")
+    assert response.status_code == 200
+    assert "immutable" in response.headers["Cache-Control"]
+
+
+def test_app_addresses_serve_the_app_on_refresh(anon_client):
+    response = anon_client.get("/c/some-chat-id")
+    assert response.status_code == 200
+    assert "<div id=root>" in response.text
+
+
+def test_missing_files_and_api_errors_are_not_the_app(anon_client):
+    assert anon_client.get("/assets/missing.js").status_code == 404
+    response = anon_client.get("/chats/unknown")  # an API route: JSON 401, not the app page
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/json")
 
 
 def test_upload_txt(client):
@@ -164,3 +180,13 @@ def test_startup_sets_the_thread_pool_size():
 
     assert THREAD_POOL_SIZE == 100
     assert anyio.run(configured_size) == 100
+
+
+def test_prompt_numbers_passages_to_match_sources():
+    from app.services.qa import build_prompt
+
+    prompt = build_prompt("Refunds?", ["First passage.", "Second passage."], "")
+
+    assert "[1] First passage." in prompt
+    assert "[2] Second passage." in prompt
+    assert "cite the passage" in prompt
