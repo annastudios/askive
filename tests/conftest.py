@@ -56,16 +56,39 @@ class FakeVoyageClient:
         return SimpleNamespace(embeddings=[fake_embedding(t) for t in texts])
 
 
+FAKE_ANSWER = " Fake answer. "
+
+
+def text_event(text: str):
+    """Shaped like Gemini's streaming events (event_type "step.delta", delta.text)."""
+    return SimpleNamespace(event_type="step.delta", delta=SimpleNamespace(type="text", text=text))
+
+
 class FakeInteractions:
     def __init__(self):
         self.prompts: list[str] = []
-        self.error: Exception | None = None
+        self.error: Exception | None = None           # raised when the request is made
+        self.stream_error: str | None = None          # sent as an error event mid-stream
 
-    def create(self, model, input):
+    def create(self, model, input, stream=False):
         if self.error:
             raise self.error
         self.prompts.append(input)
-        return SimpleNamespace(output_text=" Fake answer. ")
+        if not stream:
+            return SimpleNamespace(output_text=FAKE_ANSWER)
+        return self._events()
+
+    def _events(self):
+        yield SimpleNamespace(event_type="interaction.created")
+        yield text_event(" Fake ")
+        if self.stream_error:
+            yield SimpleNamespace(event_type="error", error=self.stream_error)
+            return
+        yield text_event("answer. ")
+        yield SimpleNamespace(event_type="interaction.completed")
+        # Real Gemini keeps the connection open for ~2 s after "completed";
+        # the app must stop reading at "completed", so reading on is a bug.
+        raise AssertionError("read past interaction.completed")
 
 
 @pytest.fixture(autouse=True)

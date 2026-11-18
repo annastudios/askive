@@ -5,6 +5,9 @@ Answers one question from a set of documents: answer cache -> hybrid search
 where the conversation history comes from.
 """
 
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+
 from fastapi import HTTPException
 # Private import: google-genai's public `google.genai.errors` classes don't
 # cover the Interactions API - it raises this internal exception type instead.
@@ -46,9 +49,9 @@ def gemini_unavailable(e: APIStatusError) -> HTTPException | None:
     return None
 
 
-def answer(user_id: str, question: str, document_ids: list[str], history: list[dict]) -> dict:
-    """Returns {"answer", "sources", "cached"}. Raises HTTPException(400) when
-    there are no documents to search."""
+def _prepare(user_id: str, question: str, document_ids: list[str], history: list[dict]):
+    """Everything before the language model: validation, cache lookup, search.
+    Returns (transcript, cached answer or None, retrieved chunks)."""
     # Each chat searches only the documents attached to it. An empty list used to
     # mean "search everything this user ever uploaded", which mixed unrelated
     # documents into answers - now it's an error instead.
@@ -58,23 +61,91 @@ def answer(user_id: str, question: str, document_ids: list[str], history: list[d
     transcript = transcript_of(history)
     cached = answer_cache.get(user_id, question, document_ids, transcript)
     if cached:
-        return {"answer": cached["answer"], "sources": cached["sources"], "cached": True}
+        return transcript, cached, cached["sources"]
 
     # A follow-up like "what about digital products?" is searched together with
     # the previous question, so retrieval knows what it refers to.
     search_query = f"{history[-1]['question']} {question}" if history else question
     query_embedding = embed_text(search_query, input_type="query")
     chunks = search(search_query, query_embedding, user_id=user_id, document_ids=document_ids)
+    return transcript, None, chunks
 
+
+def _ask_gemini(prompt: str, stream: bool = False):
     try:
-        interaction = gemini_client.interactions.create(
-            model=GEMINI_MODEL, input=build_prompt(question, chunks, transcript)
-        )
+        return gemini_client.interactions.create(model=GEMINI_MODEL, input=prompt, stream=stream)
     except APIStatusError as e:
         if (error := gemini_unavailable(e)) is not None:
             raise error from e
         raise
 
-    text = interaction.output_text.strip()
+
+def answer(user_id: str, question: str, document_ids: list[str], history: list[dict]) -> dict:
+    """Returns {"answer", "sources", "cached"}. Raises HTTPException(400) when
+    there are no documents to search."""
+    transcript, cached, chunks = _prepare(user_id, question, document_ids, history)
+    if cached:
+        return {"answer": cached["answer"], "sources": cached["sources"], "cached": True}
+
+    text = _ask_gemini(build_prompt(question, chunks, transcript)).output_text.strip()
     answer_cache.put(user_id, question, document_ids, transcript, text, chunks)
     return {"answer": text, "sources": chunks, "cached": False}
+
+
+class StreamFailed(Exception):
+    """The answer couldn't be finished once streaming had started. The message
+    is safe to show to the user."""
+
+
+@dataclass
+class AnswerStream:
+    sources: list[str]
+    pieces: Iterator[str]          # the answer, piece by piece as it is written
+    cached: bool
+    _on_complete: Callable[[str], None] | None = None
+
+    def complete(self, full_text: str):
+        """Call once the whole answer has been streamed, so it gets cached."""
+        if self._on_complete:
+            self._on_complete(full_text)
+
+
+def start_answer_stream(user_id: str, question: str, document_ids: list[str], history: list[dict]) -> AnswerStream:
+    """Like answer(), but the text arrives piece by piece. Validation, the cache
+    and the search happen here (so "no documents" is still a clean HTTP 400);
+    Gemini is only called once the caller starts reading `pieces`.
+
+    Why start Gemini late: the model thinks for ~4 s before its first word
+    (measured), so the sources can reach the user well before the answer
+    does. The cost is that a quota error now arrives inside the stream, as
+    StreamFailed, rather than as an HTTP 503 before it."""
+    transcript, cached, chunks = _prepare(user_id, question, document_ids, history)
+    if cached:
+        return AnswerStream(sources=cached["sources"], pieces=iter([cached["answer"]]), cached=True)
+
+    prompt = build_prompt(question, chunks, transcript)
+
+    def pieces() -> Iterator[str]:
+        try:
+            events = _ask_gemini(prompt, stream=True)
+        except HTTPException as e:
+            raise StreamFailed(e.detail) from e
+        try:
+            for event in events:
+                kind = getattr(event, "event_type", None)
+                if kind == "step.delta" and getattr(event.delta, "type", None) == "text":
+                    yield event.delta.text
+                elif kind == "error":
+                    raise StreamFailed("The answer was interrupted. Please try again.")
+                elif kind == "interaction.completed":
+                    # The answer is complete. Gemini keeps the connection open for
+                    # ~2 s more before closing it (measured), so stop reading now.
+                    break
+        finally:
+            if hasattr(events, "close"):
+                events.close()
+
+    def cache_it(full_text: str):
+        answer_cache.put(user_id, question, document_ids, transcript, full_text.strip(), chunks)
+
+    return AnswerStream(sources=chunks, pieces=pieces(), cached=False, _on_complete=cache_it)
